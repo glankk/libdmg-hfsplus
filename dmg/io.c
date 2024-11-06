@@ -1,7 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <bzlib.h>
 #include <pthread.h>
 #include <unistd.h>
 
@@ -63,6 +62,7 @@ typedef struct {
 	void* uncompressedChkToken;
 	ChecksumFunc compressedChk;
 	void* compressedChkToken;
+	Compressor *compressor;
 	size_t nextPending;
 	block* pending;
 } threadData;
@@ -147,11 +147,9 @@ static block* blockRead(threadData* d) {
 	return b;
 }
 
-static void blockCompress(block* b) {
+static void blockCompress(block* b, Compressor* comp) {
 	if (!b->keepRaw) {
-		b->outsize = b->bufferSize;
-		int ret = BZ2_bzBuffToBuffCompress(b->outbuf, &b->outsize, b->inbuf, b->insize, 9, 0, 0);
-		ASSERT(ret == BZ_OK, "BZ2_bzBuffToBuffCompress");
+		ASSERT(comp->compress(b->inbuf, b->insize, b->outbuf, b->bufferSize, &b->outsize) == 0, "compress");
 	}
 	
 	if(b->keepRaw || ((b->outsize / SECTOR_SIZE) >= (b->run.sectorCount - 15))) {
@@ -160,7 +158,7 @@ static void blockCompress(block* b) {
 		memcpy(b->outbuf, b->inbuf, b->insize);
 		b->outsize = b->insize;
 	} else {
-		b->run.type = BLOCK_BZIP2;
+		b->run.type = comp->block_type;
 	}
 	b->run.compLength = b->outsize;
 }
@@ -218,7 +216,7 @@ static void *threadWorker(void* arg) {
 		if (!(b = blockRead(d)))
 			break;
 
-		blockCompress(b);
+		blockCompress(b, d->compressor);
 		blockQueueAndWrite(d, b);
 	}
 
@@ -242,6 +240,13 @@ BLKXTable* insertBLKX(AbstractFile* out_, AbstractFile* in_, uint32_t firstSecto
 	};
 	pthread_mutex_init(&td.inMut, NULL);
 	pthread_mutex_init(&td.outMut, NULL);
+
+	Compressor comp;
+	if (comp_)
+		comp = *comp_;
+	else
+		ASSERT(getCompressor(&comp, NULL) == 0, "getCompressor");
+	td.compressor = &comp;
 
 	td.blkx = (BLKXTable*) malloc(sizeof(BLKXTable) + (2 * sizeof(BLKXRun)));
 	td.roomForRuns = 2;

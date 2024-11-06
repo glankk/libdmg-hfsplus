@@ -7,9 +7,17 @@
 extern "C" {
 #endif
 
-typedef struct {
+// Return zero on success
+typedef int (*CompressFunc)(unsigned char *inBuffer, size_t inSize,
+                            unsigned char *outBuffer, size_t outBufSize, size_t *compSize);
 
+typedef struct {
+  CompressFunc compress;
+  uint32_t block_type;
 } Compressor;
+
+// Pass NULL name to get the default. Return zero on success
+int getCompressor(Compressor* comp, char *name);
 
 // Return zero on success
 int decompressRun(uint32_t type,

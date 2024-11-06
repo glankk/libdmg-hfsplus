@@ -21,6 +21,45 @@
   }
 #endif
 
+static int bz2Compress(unsigned char *inBuffer, size_t inSize,
+                       unsigned char *outBuffer, size_t outBufSize, size_t *compSize)
+{
+  unsigned int bz2CompSize = outBufSize;
+  int ret = (BZ2_bzBuffToBuffCompress((char*)outBuffer, &bz2CompSize, (char*)inBuffer, inSize, 9, 0, 0) != BZ_OK);
+  *compSize = bz2CompSize;
+  return ret;
+}
+
+static int zlibCompress(unsigned char *inBuffer, size_t inSize,
+                        unsigned char *outBuffer, size_t outBufSize, size_t *compSize)
+{
+  *compSize = outBufSize;
+  return (compress2(outBuffer, compSize, inBuffer, inSize, Z_DEFAULT_COMPRESSION) != Z_OK);
+}
+
+int getCompressor(Compressor* comp, char *name)
+{
+  if (name == NULL || strcasecmp(name, "bzip2") == 0) {
+    comp->block_type = BLOCK_BZIP2;
+    comp->compress = bz2Compress;
+    return 0;
+  }
+  if (strcasecmp(name, "zlib") == 0) {
+    comp->block_type = BLOCK_ZLIB;
+    comp->compress = zlibCompress;
+    return 0;
+  }
+#ifdef HAVE_LIBLZMA
+  if (strcasecmp(name, "lzma") == 0) {
+    comp->block_type = BLOCK_LZMA;
+    comp->compress = lzmaCompress;
+    return 0;
+  }
+#endif
+
+  return 1;
+}
+
 int decompressRun(uint32_t type,
                   unsigned char* inBuffer, size_t inSize,
                   unsigned char* outBuffer, size_t outBufSize, size_t expectedSize)
