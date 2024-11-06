@@ -2,7 +2,6 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
 
 #include <dmg/dmg.h>
 #include <dmg/filevault.h>
@@ -33,13 +32,56 @@ int buildInOut(const char* source, const char* dest, AbstractFile** in, Abstract
 	return TRUE;
 }
 
-int usage(const char *name) {
+void usage(const char *name) {
 	printf("usage: %s (OPTIONS) [extract|build|build2048|res|iso|dmg|attribute] <in> <out> (partition)\n", name);
 	printf("OPTIONS:\n");
 	printf("\t-k\tkey\n");
 	printf("\t-J\tcompressor name (%s)\n", compressionNames());
 	printf("\t-L\tcompression level\n");
-	return 2;
+	exit(2);
+}
+
+/* Mini getopt. Contrary to macOS's getopt, allow options after positionals */
+static int moptind = 0;
+static int moptdst, moptdone;
+static char *moptarg;
+
+int mgetopt(int argc, char** argv, char *optstr)
+{
+	char *opt;
+	int i;
+
+	if (moptind == 0) { /* setup */
+		moptind = 1;
+		moptdst = 1; /* position in argv next arg will be moved to */
+		moptdone = 0; /* when we've seen -- */
+	}
+
+	while (moptind < argc) {
+		char *opt = argv[moptind++];
+		if (moptdone || opt[0] != '-' || strcmp(opt, "-") == 0) { /* - can be positional */
+			argv[moptdst++] = opt; /* positional arg, move it before options */
+			continue;
+		}
+		if (strcmp(opt, "--") == 0) {
+			moptdone = 1;
+			continue;
+		}
+
+		if (moptind >= argc || strlen(opt) != 2 || strchr(optstr, opt[1]) == NULL) {
+			usage(argv[0]);
+		}
+
+		moptarg = argv[moptind++];
+		return opt[1];
+	}
+
+	/* done with options, put positions args such that they end at argc */
+	for (i = 1; i < moptdst; i++) {
+		argv[argc - i] = argv[moptdst - i];
+	}
+	moptind = argc - (moptdst - 1);
+	return -1;
 }
 
 int main(int argc, char* argv[]) {
@@ -51,36 +93,34 @@ int main(int argc, char* argv[]) {
 	char *key = NULL;
 	Compressor comp;
 	int ret;
-	
+
 	TestByteOrder();
 	getCompressor(&comp, NULL);
 
-	while ((opt = getopt(argc, argv, "k:J:L:")) != -1) {
+	while ((opt = mgetopt(argc, argv, "kJL")) != -1) {
 		switch (opt) {
 			case 'k':
-				key = optarg;
+				key = moptarg;
 				break;
 			case 'J':
-				ret = getCompressor(&comp, optarg);
+				ret = getCompressor(&comp, moptarg);
 				if (ret != 0) {
-					fprintf(stderr, "Unknown compressor \"%s\"\nAllowed options are: %s\n", optarg, compressionNames());
+					fprintf(stderr, "Unknown compressor \"%s\"\nAllowed options are: %s\n", moptarg, compressionNames());
 					return 2;
 				}
 				break;
 			case 'L':
-				sscanf(optarg, "%d", &comp.level);
+				sscanf(moptarg, "%d", &comp.level);
 				break;
-			default:
-				return usage(argv[0]);
 		}
 	}
 
-	if (argc < optind + 3) {
-		return usage(argv[0]);
+	if (argc < moptind + 3) {
+		usage(argv[0]);
 	}
-	cmd = argv[optind++];
-	infile = argv[optind++];
-	outfile = argv[optind++];
+	cmd = argv[moptind++];
+	infile = argv[moptind++];
+	outfile = argv[moptind++];
 
 	if(!buildInOut(infile, outfile, &in, &out)) {
 		return -1;
@@ -91,14 +131,14 @@ int main(int argc, char* argv[]) {
 
 	if(strcmp(cmd, "extract") == 0) {
 		partNum = -1;
-		if (optind < argc) {
-				sscanf(argv[optind++], "%d", &partNum);
+		if (moptind < argc) {
+				sscanf(argv[moptind++], "%d", &partNum);
 		}
 		extractDmg(in, out, partNum);
 	} else if(strcmp(cmd, "build") == 0) {
 		char *anchor = NULL;
-		if (argc >= optind) {
-			anchor = argv[optind++];
+		if (moptind < argc) {
+			anchor = argv[moptind++];
 		}
 		buildDmg(in, out, SECTOR_SIZE, anchor, &comp);
 	} else if(strcmp(cmd, "build2048") == 0) {
@@ -111,12 +151,12 @@ int main(int argc, char* argv[]) {
 		convertToDMG(in, out, &comp);
 	} else if(strcmp(cmd, "attribute") == 0) {
 		char *anchor, *data;
-		if(argc < optind + 2) {
+		if(argc < moptind + 2) {
 			printf("Not enough arguments: attribute <in> <out> <sentinel> <string>");
 			return 2;
 		}
-		anchor = argv[optind++];
-		data = argv[optind++];
+		anchor = argv[moptind++];
+		data = argv[moptind++];
 		updateAttribution(in, out, anchor, data, strlen(data));
 	}
 
