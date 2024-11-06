@@ -32,6 +32,23 @@
   }
 #endif
 
+#ifdef HAVE_LZFSE
+  #include <lzfse.h>
+
+  static int lzfseDecompress(unsigned char* inBuffer, size_t inSize, unsigned char* outBuffer, size_t outBufSize, size_t *decompSize)
+  {
+    *decompSize = lzfse_decode_buffer(outBuffer, outBufSize, inBuffer, inSize, NULL);
+    return !*decompSize;
+  }
+
+  static int lzfseCompress(unsigned char *inBuffer, size_t inSize,
+                          unsigned char *outBuffer, size_t outBufSize, size_t *compSize)
+  {
+    *compSize = lzfse_encode_buffer(outBuffer, outBufSize, inBuffer, inSize, NULL);
+    return !*compSize;
+  }
+#endif
+
 static int bz2Compress(unsigned char *inBuffer, size_t inSize,
                        unsigned char *outBuffer, size_t outBufSize, size_t *compSize)
 {
@@ -67,6 +84,13 @@ int getCompressor(Compressor* comp, char *name)
     return 0;
   }
 #endif
+#ifdef HAVE_LZFSE
+  if (strcasecmp(name, "lzfse") == 0) {
+    comp->block_type = BLOCK_LZFSE;
+    comp->compress = lzfseCompress;
+    return 0;
+  }
+#endif
 
   return 1;
 }
@@ -76,6 +100,9 @@ const char *compressionNames()
   return "bzip2, zlib"
 #ifdef HAVE_LIBLZMA
     ", lzma"
+#endif
+#ifdef HAVE_LZFSE
+    ", lzfse"
 #endif
   ;
 }
@@ -99,6 +126,10 @@ int decompressRun(uint32_t type,
 #ifdef HAVE_LIBLZMA
   } else if (type == BLOCK_LZMA) {
     ret = lzmaDecompress(inBuffer, inSize, outBuffer, outBufSize, &decompSize);
+#endif
+#ifdef HAVE_LZFSE
+  } else if (type == BLOCK_LZFSE) {
+    ret = lzfseDecompress(inBuffer, inSize, outBuffer, outBufSize, &decompSize);
 #endif
   } else {
     fprintf(stderr, "Unsupported block type: %#08x\n", type);

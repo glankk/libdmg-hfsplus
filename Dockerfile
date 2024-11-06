@@ -9,6 +9,7 @@ COPY includes /source/includes
 COPY hdutil /source/hdutil
 COPY dmg /source/dmg
 COPY hfs /source/hfs
+COPY cmake /source/cmake
 RUN cmake -B /build /source
 RUN make -C /build -j$(nproc)
 
