@@ -225,7 +225,7 @@ static void *threadWorker(void* arg) {
 
 BLKXTable* insertBLKX(AbstractFile* out_, AbstractFile* in_, uint32_t firstSectorNumber, uint32_t numSectors_, uint32_t blocksDescriptor,
 			uint32_t checksumType, ChecksumFunc uncompressedChk_, void* uncompressedChkToken_, ChecksumFunc compressedChk_,
-			void* compressedChkToken_, Volume* volume, AbstractAttribution* attribution_, Compressor* comp_) {
+			void* compressedChkToken_, Volume* volume, AbstractAttribution* attribution_, Compressor* comp) {
 	threadData td = {
 		.out = out_,
 		.in = in_,
@@ -241,12 +241,7 @@ BLKXTable* insertBLKX(AbstractFile* out_, AbstractFile* in_, uint32_t firstSecto
 	pthread_mutex_init(&td.inMut, NULL);
 	pthread_mutex_init(&td.outMut, NULL);
 
-	Compressor comp;
-	if (comp_)
-		comp = *comp_;
-	else
-		ASSERT(getCompressor(&comp, NULL) == 0, "getCompressor");
-	td.compressor = &comp;
+	td.compressor = comp;
 
 	td.blkx = (BLKXTable*) malloc(sizeof(BLKXTable) + (2 * sizeof(BLKXRun)));
 	td.roomForRuns = 2;

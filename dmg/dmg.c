@@ -45,13 +45,23 @@ int main(int argc, char* argv[]) {
 	int opt;
 	char *cmd, *infile, *outfile;
 	char *key = NULL;
+	Compressor comp;
+	int ret;
 	
 	TestByteOrder();
+	getCompressor(&comp, NULL);
 
-	while ((opt = getopt(argc, argv, "k:")) != -1) {
+	while ((opt = getopt(argc, argv, "k:J:")) != -1) {
 		switch (opt) {
 			case 'k':
 				key = optarg;
+				break;
+			case 'J':
+				ret = getCompressor(&comp, optarg);
+				if (ret != 0) {
+					fprintf(stderr, "Unknown compressor \"%s\"\n", optarg);
+					return 2;
+				}
 				break;
 			default:
 				return usage(argv[0]);
@@ -83,15 +93,15 @@ int main(int argc, char* argv[]) {
 		if (argc >= optind) {
 			anchor = argv[optind++];
 		}
-		buildDmg(in, out, SECTOR_SIZE, anchor, NULL);
+		buildDmg(in, out, SECTOR_SIZE, anchor, &comp);
 	} else if(strcmp(cmd, "build2048") == 0) {
-		buildDmg(in, out, 2048, NULL, NULL);
+		buildDmg(in, out, 2048, NULL, &comp);
 	} else if(strcmp(cmd, "res") == 0) {
 		outResources(in, out);
 	} else if(strcmp(cmd, "iso") == 0) {
 		convertToISO(in, out);
 	} else if(strcmp(cmd, "dmg") == 0) {
-		convertToDMG(in, out, NULL);
+		convertToDMG(in, out, &comp);
 	} else if(strcmp(cmd, "attribute") == 0) {
 		char *anchor, *data;
 		if(argc < optind + 2) {
