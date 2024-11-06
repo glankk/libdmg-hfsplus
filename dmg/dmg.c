@@ -59,7 +59,7 @@ int main(int argc, char* argv[]) {
 			case 'J':
 				ret = getCompressor(&comp, optarg);
 				if (ret != 0) {
-					fprintf(stderr, "Unknown compressor \"%s\"\n", optarg);
+					fprintf(stderr, "Unknown compressor \"%s\"\nAllowed options are: %s\n", optarg, compressionNames());
 					return 2;
 				}
 				break;

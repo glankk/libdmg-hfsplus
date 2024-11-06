@@ -71,6 +71,15 @@ int getCompressor(Compressor* comp, char *name)
   return 1;
 }
 
+const char *compressionNames()
+{
+  return "bzip2, zlib"
+#ifdef HAVE_LIBLZMA
+    ", lzma"
+#endif
+  ;
+}
+
 int decompressRun(uint32_t type,
                   unsigned char* inBuffer, size_t inSize,
                   unsigned char* outBuffer, size_t outBufSize, size_t expectedSize)

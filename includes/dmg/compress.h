@@ -19,6 +19,8 @@ typedef struct {
 // Pass NULL name to get the default. Return zero on success
 int getCompressor(Compressor* comp, char *name);
 
+const char *compressionNames();
+
 // Return zero on success
 int decompressRun(uint32_t type,
                   unsigned char* inBuffer, size_t inSize,
