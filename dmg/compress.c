@@ -5,10 +5,6 @@
 #include <bzlib.h>
 #include "dmg/adc.h"
 
-// LZMA and LZFSE seem to need a larger decompression buffer for macOS to be happy. This value is empirically taken from
-// an LZMA dmg created on macOS 14 with hdiutil.
-#define MODERN_DECOMPRESS_BUFFER_REQUESTED 0x82F
-
 #ifdef HAVE_LIBLZMA
   #include <lzma.h>
 
@@ -75,28 +71,45 @@ static int zlibCompress(unsigned char *inBuffer, size_t inSize,
   return (compress2(outBuffer, compSize, inBuffer, inSize, level) != Z_OK);
 }
 
+size_t oldDecompressBuffer(size_t runSectors)
+{
+  // A reasonable heuristic
+  // Bzip2 at level 1 usually needs the largest extra space, compared to other compressors.
+  // Happens to equal 0x208 for 0x200 sectors, same as before.
+  return runSectors + 4 + (runSectors >> 7);
+}
+
+size_t modernDecompressBuffer(size_t runSectors)
+{
+  // Modern algorithms need more space for some reason, about double the size of a run.
+  // Sometimes it's a bit more, so add a generous amount of padding.
+  // It's unclear why so much is needed, lzma/lzfse shouldn't need this much in normal usage!
+  return runSectors * 2 + 64;
+}
+
 int getCompressor(Compressor* comp, char *name)
 {
   if (name == NULL) {
     comp->level = -1;
-    comp->minDecompressBufferRequested = 0;
   }
 
   if (name == NULL || strcasecmp(name, "bzip2") == 0) {
     comp->block_type = BLOCK_BZIP2;
     comp->compress = bz2Compress;
+    comp->decompressBuffer = oldDecompressBuffer;
     return 0;
   }
   if (strcasecmp(name, "zlib") == 0) {
     comp->block_type = BLOCK_ZLIB;
     comp->compress = zlibCompress;
+    comp->decompressBuffer = oldDecompressBuffer;
     return 0;
   }
 #ifdef HAVE_LIBLZMA
   if (strcasecmp(name, "lzma") == 0) {
     comp->block_type = BLOCK_LZMA;
     comp->compress = lzmaCompress;
-    comp->minDecompressBufferRequested = MODERN_DECOMPRESS_BUFFER_REQUESTED;
+    comp->decompressBuffer = modernDecompressBuffer;
     return 0;
   }
 #endif
@@ -104,7 +117,7 @@ int getCompressor(Compressor* comp, char *name)
   if (strcasecmp(name, "lzfse") == 0) {
     comp->block_type = BLOCK_LZFSE;
     comp->compress = lzfseCompress;
-    comp->minDecompressBufferRequested = MODERN_DECOMPRESS_BUFFER_REQUESTED;
+    comp->decompressBuffer = modernDecompressBuffer;
     return 0;
   }
 #endif
@@ -158,3 +171,4 @@ int decompressRun(uint32_t type,
   }
   return ret;
 }
+

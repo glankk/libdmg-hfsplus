@@ -11,6 +11,19 @@
 #include "common.h"
 #include "compress.h"
 
+// Okay, this value sucks. You shouldn't touch it because it affects how many ignore sections get added to the blkx list
+// If the blkx list gets too fragmented with ignore sections, then the copy list in certain versions of the iPhone's
+// asr becomes too big. Due to Apple's BUGGY CODE, this causes asr to segfault! This is because the copy list becomes
+// too large for the initial buffer allocated, and realloc is called by asr. Unfortunately, after the realloc, the initial
+// pointer is still used by asr for a little while! Frakking noob mistake.
+
+// The only reason why it works at all is their really idiotic algorithm to determine where to put ignore blocks. It's
+// certainly nothing reasonable like "put in an ignore block if you encounter more than X blank sectors" (like mine)
+// There's always a large-ish one at the end, and a tiny 2 sector one at the end too, to take care of the space after
+// the backup volume header. No frakking clue how they go about determining how to do that.
+
+#define DEFAULT_SECTORS_AT_A_TIME 0x200
+
 #define CHECKSUM_UDIF_CRC32 0x00000002
 #define CHECKSUM_MD5 0x00000004
 #define CHECKSUM_MKBLOCK 0x0002
@@ -321,23 +334,26 @@ extern "C" {
 
 	void readDriverDescriptorMap(AbstractFile* file, ResourceKey* resources);
 	DriverDescriptorRecord* createDriverDescriptorMap(uint32_t numSectors, unsigned int BlockSize);
-	int writeDriverDescriptorMap(int pNum, AbstractFile* file, DriverDescriptorRecord* DDM, unsigned int BlockSize, ChecksumFunc dataForkChecksum, void* dataForkToken, ResourceKey **resources, Compressor *comp);
+	int writeDriverDescriptorMap(int pNum, AbstractFile* file, DriverDescriptorRecord* DDM, unsigned int BlockSize, ChecksumFunc dataForkChecksum, void* dataForkToken, ResourceKey **resources,
+		Compressor *comp, size_t runSectors);
 	void readApplePartitionMap(AbstractFile* file, ResourceKey* resources, unsigned int BlockSize);
 	Partition* createApplePartitionMap(uint32_t numSectors, const char* volumeType, unsigned int BlockSize);
-	int writeApplePartitionMap(int pNum, AbstractFile* file, Partition* partitions, unsigned int BlockSize, ChecksumFunc dataForkChecksum, void* dataForkToken, ResourceKey **resources, NSizResource** nsizIn, Compressor *comp);
-	int writeATAPI(int pNum, AbstractFile* file, unsigned int BlockSize, ChecksumFunc dataForkChecksum, void* dataForkToken, ResourceKey **resources, NSizResource** nsizIn, Compressor *comp);
+	int writeApplePartitionMap(int pNum, AbstractFile* file, Partition* partitions, unsigned int BlockSize, ChecksumFunc dataForkChecksum, void* dataForkToken, ResourceKey **resources, NSizResource** nsizIn,
+		Compressor *comp, size_t runSectors);
+	int writeATAPI(int pNum, AbstractFile* file, unsigned int BlockSize, ChecksumFunc dataForkChecksum, void* dataForkToken, ResourceKey **resources, NSizResource** nsizIn,
+		Compressor *comp, size_t runSectors);
 	int writeFreePartition(int pNum, AbstractFile* outFile, uint32_t offset, uint32_t numSectors, ResourceKey** resources);
 
 	void extractBLKX(AbstractFile* in, AbstractFile* out, BLKXTable* blkx);
 	BLKXTable* insertBLKX(AbstractFile* out, AbstractFile* in, uint32_t firstSectorNumber, uint32_t numSectors, uint32_t blocksDescriptor,
 	            uint32_t checksumType, ChecksumFunc uncompressedChk, void* uncompressedChkToken, ChecksumFunc compressedChk,
-				void* compressedChkToken, Volume* volume, AbstractAttribution* attribution, Compressor* comp);
+				void* compressedChkToken, Volume* volume, AbstractAttribution* attribution, Compressor* comp, size_t runSectors);
 
 
 	int extractDmg(AbstractFile* abstractIn, AbstractFile* abstractOut, int partNum);
-	int buildDmg(AbstractFile* abstractIn, AbstractFile* abstractOut, unsigned int BlockSize, const char* sentinel, Compressor *comp);
+	int buildDmg(AbstractFile* abstractIn, AbstractFile* abstractOut, unsigned int BlockSize, const char* sentinel, Compressor *comp, size_t runSectors);
 	int convertToISO(AbstractFile* abstractIn, AbstractFile* abstractOut);
-	int convertToDMG(AbstractFile* abstractIn, AbstractFile* abstractOut, Compressor* comp);
+	int convertToDMG(AbstractFile* abstractIn, AbstractFile* abstractOut, Compressor* comp, size_t runSectors);
 #ifdef __cplusplus
 }
 #endif

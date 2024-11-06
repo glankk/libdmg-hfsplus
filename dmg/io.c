@@ -9,23 +9,6 @@
 #include <dmg/attribution.h>
 #include <inttypes.h>
 
-// Okay, this value sucks. You shouldn't touch it because it affects how many ignore sections get added to the blkx list
-// If the blkx list gets too fragmented with ignore sections, then the copy list in certain versions of the iPhone's
-// asr becomes too big. Due to Apple's BUGGY CODE, this causes asr to segfault! This is because the copy list becomes
-// too large for the initial buffer allocated, and realloc is called by asr. Unfortunately, after the realloc, the initial
-// pointer is still used by asr for a little while! Frakking noob mistake.
-
-// The only reason why it works at all is their really idiotic algorithm to determine where to put ignore blocks. It's
-// certainly nothing reasonable like "put in an ignore block if you encounter more than X blank sectors" (like mine)
-// There's always a large-ish one at the end, and a tiny 2 sector one at the end too, to take care of the space after
-// the backup volume header. No frakking clue how they go about determining how to do that.
-
-#define SECTORS_AT_A_TIME 0x200
-
-// The base decompression buffer requested, if nothing else is specified.
-
-#define DECOMPRESS_BUFFER_REQUESTED 0x208
-
 typedef struct block {
 	size_t bufferSize;
 
@@ -43,6 +26,7 @@ typedef struct block {
 } block;
 
 typedef struct {
+	size_t runSectors;
 	size_t bufferSize;
 	AbstractAttribution* attribution;
 
@@ -103,7 +87,7 @@ static block* blockRead(threadData* d) {
 	block* b = blockAlloc(d->bufferSize, d->curRun);
 		
 	b->run.sectorStart = d->curSector;
-	b->run.sectorCount = (d->numSectors > SECTORS_AT_A_TIME) ? SECTORS_AT_A_TIME : d->numSectors;
+	b->run.sectorCount = (d->numSectors > d->runSectors) ? d->runSectors : d->numSectors;
 	size_t readSize = b->run.sectorCount * SECTOR_SIZE;
 
 	if (b->idx == 0) {
@@ -229,10 +213,11 @@ static void *threadWorker(void* arg) {
 
 BLKXTable* insertBLKX(AbstractFile* out_, AbstractFile* in_, uint32_t firstSectorNumber, uint32_t numSectors_, uint32_t blocksDescriptor,
 			uint32_t checksumType, ChecksumFunc uncompressedChk_, void* uncompressedChkToken_, ChecksumFunc compressedChk_,
-			void* compressedChkToken_, Volume* volume, AbstractAttribution* attribution_, Compressor* comp) {
+			void* compressedChkToken_, Volume* volume, AbstractAttribution* attribution_, Compressor* comp, size_t runSectors) {
 	threadData td = {
 		.out = out_,
 		.in = in_,
+		.runSectors = runSectors,
 		.numSectors = numSectors_,
 		.uncompressedChk = uncompressedChk_,
 		.uncompressedChkToken = uncompressedChkToken_,
@@ -256,10 +241,12 @@ BLKXTable* insertBLKX(AbstractFile* out_, AbstractFile* in_, uint32_t firstSecto
 	td.blkx->firstSectorNumber = firstSectorNumber;
 	td.blkx->sectorCount = td.numSectors;
 	td.blkx->dataStart = 0;
-	td.blkx->decompressBufferRequested = DECOMPRESS_BUFFER_REQUESTED;
-	if (comp->minDecompressBufferRequested > td.blkx->decompressBufferRequested) {
-		td.blkx->decompressBufferRequested = comp->minDecompressBufferRequested;
+
+	td.blkx->decompressBufferRequested = comp->decompressBuffer(runSectors);
+	if (MIN_DECOMPRESS_BUFFER_SECTORS > td.blkx->decompressBufferRequested) {
+		td.blkx->decompressBufferRequested = MIN_DECOMPRESS_BUFFER_SECTORS;
 	}
+
 	td.blkx->blocksDescriptor = blocksDescriptor;
 	td.blkx->reserved1 = 0;
 	td.blkx->reserved2 = 0;

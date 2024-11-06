@@ -38,6 +38,7 @@ void usage(const char *name) {
 	printf("\t-k\tkey\n");
 	printf("\t-J\tcompressor name (%s)\n", compressionNames());
 	printf("\t-L\tcompression level\n");
+	printf("\t-r\trun size (in sectors)\n");
 	exit(2);
 }
 
@@ -93,11 +94,12 @@ int main(int argc, char* argv[]) {
 	char *key = NULL;
 	Compressor comp;
 	int ret;
+	int runSectors = DEFAULT_SECTORS_AT_A_TIME;
 
 	TestByteOrder();
 	getCompressor(&comp, NULL);
 
-	while ((opt = mgetopt(argc, argv, "kJL")) != -1) {
+	while ((opt = mgetopt(argc, argv, "kJLr")) != -1) {
 		switch (opt) {
 			case 'k':
 				key = moptarg;
@@ -111,6 +113,13 @@ int main(int argc, char* argv[]) {
 				break;
 			case 'L':
 				sscanf(moptarg, "%d", &comp.level);
+				break;
+			case 'r':
+				sscanf(moptarg, "%d", &runSectors);
+				if (runSectors < DEFAULT_SECTORS_AT_A_TIME) {
+					fprintf(stderr, "Run size must be at least %d sectors\n", DEFAULT_SECTORS_AT_A_TIME);
+					return 2;
+				}
 				break;
 		}
 	}
@@ -140,15 +149,15 @@ int main(int argc, char* argv[]) {
 		if (moptind < argc) {
 			anchor = argv[moptind++];
 		}
-		buildDmg(in, out, SECTOR_SIZE, anchor, &comp);
+		buildDmg(in, out, SECTOR_SIZE, anchor, &comp, runSectors);
 	} else if(strcmp(cmd, "build2048") == 0) {
-		buildDmg(in, out, 2048, NULL, &comp);
+		buildDmg(in, out, 2048, NULL, &comp, runSectors);
 	} else if(strcmp(cmd, "res") == 0) {
 		outResources(in, out);
 	} else if(strcmp(cmd, "iso") == 0) {
 		convertToISO(in, out);
 	} else if(strcmp(cmd, "dmg") == 0) {
-		convertToDMG(in, out, &comp);
+		convertToDMG(in, out, &comp, runSectors);
 	} else if(strcmp(cmd, "attribute") == 0) {
 		char *anchor, *data;
 		if(argc < moptind + 2) {
