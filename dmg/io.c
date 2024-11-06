@@ -149,24 +149,9 @@ static block* blockRead(threadData* d) {
 
 static void blockCompress(block* b) {
 	if (!b->keepRaw) {
-		bz_stream strm;
-		memset(&strm, 0, sizeof(strm));
-		strm.bzalloc = NULL;
-		strm.bzfree = NULL;
-		strm.opaque = NULL;
-		ASSERT(BZ2_bzCompressInit(&strm, 9, 0, 0) == BZ_OK, "BZ2_bzCompressInit");
-		strm.avail_in = b->insize;
-		strm.next_in = (char*)b->inbuf;
-		strm.avail_out = b->bufferSize;
-		strm.next_out = (char*)b->outbuf;
-
-		int ret;
-		ASSERT((ret = BZ2_bzCompress(&strm, BZ_FINISH)) != BZ_SEQUENCE_ERROR, "BZ2_bzCompress/BZ_SEQUENCE_ERROR");
-		if(ret != BZ_STREAM_END) {
-			ASSERT(FALSE, "BZ2_bzCompress");
-		}
-		BZ2_bzCompressEnd(&strm);
-		b->outsize = b->bufferSize - strm.avail_out;
+		b->outsize = b->bufferSize;
+		int ret = BZ2_bzBuffToBuffCompress(b->outbuf, &b->outsize, b->inbuf, b->insize, 9, 0, 0);
+		ASSERT(ret == BZ_OK, "BZ2_bzBuffToBuffCompress");
 	}
 	
 	if(b->keepRaw || ((b->outsize / SECTOR_SIZE) >= (b->run.sectorCount - 15))) {
