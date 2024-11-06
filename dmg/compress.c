@@ -19,6 +19,17 @@
       inBuffer, &inPos, inSize, outBuffer, decompSize, outBufSize);
     return lret != LZMA_OK;
   }
+
+  static int lzmaCompress(unsigned char *inBuffer, size_t inSize,
+                          unsigned char *outBuffer, size_t outBufSize, size_t *compSize)
+  {
+    lzma_ret lret;
+
+    *compSize = 0;
+    lret = lzma_easy_buffer_encode(6, LZMA_CHECK_NONE, NULL, inBuffer, inSize, outBuffer,
+      compSize, outBufSize);
+    return lret != LZMA_OK;
+  }
 #endif
 
 static int bz2Compress(unsigned char *inBuffer, size_t inSize,
