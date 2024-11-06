@@ -21,12 +21,14 @@
   }
 
   static int lzmaCompress(unsigned char *inBuffer, size_t inSize,
-                          unsigned char *outBuffer, size_t outBufSize, size_t *compSize)
+                          unsigned char *outBuffer, size_t outBufSize, size_t *compSize, int level)
   {
     lzma_ret lret;
 
     *compSize = 0;
-    lret = lzma_easy_buffer_encode(6, LZMA_CHECK_NONE, NULL, inBuffer, inSize, outBuffer,
+    if (level == -1)
+      level = LZMA_PRESET_DEFAULT;
+    lret = lzma_easy_buffer_encode(level, LZMA_CHECK_NONE, NULL, inBuffer, inSize, outBuffer,
       compSize, outBufSize);
     return lret != LZMA_OK;
   }
@@ -42,7 +44,7 @@
   }
 
   static int lzfseCompress(unsigned char *inBuffer, size_t inSize,
-                          unsigned char *outBuffer, size_t outBufSize, size_t *compSize)
+                          unsigned char *outBuffer, size_t outBufSize, size_t *compSize, int level)
   {
     *compSize = lzfse_encode_buffer(outBuffer, outBufSize, inBuffer, inSize, NULL);
     return !*compSize;
@@ -50,23 +52,31 @@
 #endif
 
 static int bz2Compress(unsigned char *inBuffer, size_t inSize,
-                       unsigned char *outBuffer, size_t outBufSize, size_t *compSize)
+                       unsigned char *outBuffer, size_t outBufSize, size_t *compSize, int level)
 {
   unsigned int bz2CompSize = outBufSize;
-  int ret = (BZ2_bzBuffToBuffCompress((char*)outBuffer, &bz2CompSize, (char*)inBuffer, inSize, 9, 0, 0) != BZ_OK);
+  if (level == -1)
+    level = 9;
+  int ret = (BZ2_bzBuffToBuffCompress((char*)outBuffer, &bz2CompSize, (char*)inBuffer, inSize, level, 0, 0) != BZ_OK);
   *compSize = bz2CompSize;
   return ret;
 }
 
 static int zlibCompress(unsigned char *inBuffer, size_t inSize,
-                        unsigned char *outBuffer, size_t outBufSize, size_t *compSize)
+                        unsigned char *outBuffer, size_t outBufSize, size_t *compSize, int level)
 {
   *compSize = outBufSize;
-  return (compress2(outBuffer, compSize, inBuffer, inSize, Z_DEFAULT_COMPRESSION) != Z_OK);
+  if (level == -1)
+    level = Z_DEFAULT_COMPRESSION;
+  return (compress2(outBuffer, compSize, inBuffer, inSize, level) != Z_OK);
 }
 
 int getCompressor(Compressor* comp, char *name)
 {
+  if (name == NULL) {
+    comp->level = -1;
+  }
+
   if (name == NULL || strcasecmp(name, "bzip2") == 0) {
     comp->block_type = BLOCK_BZIP2;
     comp->compress = bz2Compress;

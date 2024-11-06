@@ -51,7 +51,7 @@ int main(int argc, char* argv[]) {
 	TestByteOrder();
 	getCompressor(&comp, NULL);
 
-	while ((opt = getopt(argc, argv, "k:J:")) != -1) {
+	while ((opt = getopt(argc, argv, "k:J:L:")) != -1) {
 		switch (opt) {
 			case 'k':
 				key = optarg;
@@ -62,6 +62,9 @@ int main(int argc, char* argv[]) {
 					fprintf(stderr, "Unknown compressor \"%s\"\nAllowed options are: %s\n", optarg, compressionNames());
 					return 2;
 				}
+				break;
+			case 'L':
+				sscanf(optarg, "%d", &comp.level);
 				break;
 			default:
 				return usage(argv[0]);

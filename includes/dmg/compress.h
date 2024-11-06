@@ -9,10 +9,12 @@ extern "C" {
 
 // Return zero on success
 typedef int (*CompressFunc)(unsigned char *inBuffer, size_t inSize,
-                            unsigned char *outBuffer, size_t outBufSize, size_t *compSize);
+                            unsigned char *outBuffer, size_t outBufSize, size_t *compSize,
+                            int level);
 
 typedef struct {
   CompressFunc compress;
+  int level;
   uint32_t block_type;
 } Compressor;
 
