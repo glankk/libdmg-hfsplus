@@ -83,15 +83,15 @@ int main(int argc, char* argv[]) {
 		if (argc >= optind) {
 			anchor = argv[optind++];
 		}
-		buildDmg(in, out, SECTOR_SIZE, anchor);
+		buildDmg(in, out, SECTOR_SIZE, anchor, NULL);
 	} else if(strcmp(cmd, "build2048") == 0) {
-		buildDmg(in, out, 2048, NULL);
+		buildDmg(in, out, 2048, NULL, NULL);
 	} else if(strcmp(cmd, "res") == 0) {
 		outResources(in, out);
 	} else if(strcmp(cmd, "iso") == 0) {
 		convertToISO(in, out);
 	} else if(strcmp(cmd, "dmg") == 0) {
-		convertToDMG(in, out);
+		convertToDMG(in, out, NULL);
 	} else if(strcmp(cmd, "attribute") == 0) {
 		char *anchor, *data;
 		if(argc < optind + 2) {

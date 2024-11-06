@@ -88,7 +88,7 @@ uint32_t calculateMasterChecksum(ResourceKey* resources) {
 	return result;  
 }
 
-int buildDmg(AbstractFile* abstractIn, AbstractFile* abstractOut, unsigned int BlockSize, const char* sentinel) {
+int buildDmg(AbstractFile* abstractIn, AbstractFile* abstractOut, unsigned int BlockSize, const char* sentinel, Compressor *comp) {
 	io_func* io;
 	Volume* volume;  
 	
@@ -136,11 +136,11 @@ int buildDmg(AbstractFile* abstractIn, AbstractFile* abstractOut, unsigned int B
 	
 	partitions = createApplePartitionMap((volumeHeader->totalBlocks * volumeHeader->blockSize)/SECTOR_SIZE, HFSX_VOLUME_TYPE, BlockSize);
 	
-	int pNum = writeDriverDescriptorMap(-1, abstractOut, DDM, BlockSize, &CRCProxy, (void*) (&dataForkToken), &resources);
+	int pNum = writeDriverDescriptorMap(-1, abstractOut, DDM, BlockSize, &CRCProxy, (void*) (&dataForkToken), &resources, comp);
 	free(DDM);
-	pNum = writeApplePartitionMap(pNum, abstractOut, partitions, BlockSize, &CRCProxy, (void*) (&dataForkToken), &resources, &nsiz);
+	pNum = writeApplePartitionMap(pNum, abstractOut, partitions, BlockSize, &CRCProxy, (void*) (&dataForkToken), &resources, &nsiz, comp);
 	free(partitions);
-	pNum = writeATAPI(pNum, abstractOut, BlockSize, &CRCProxy, (void*) (&dataForkToken), &resources, &nsiz);
+	pNum = writeATAPI(pNum, abstractOut, BlockSize, &CRCProxy, (void*) (&dataForkToken), &resources, &nsiz, comp);
 	
 	memset(&uncompressedToken, 0, sizeof(uncompressedToken));
 	SHA1Init(&(uncompressedToken.sha1));
@@ -159,7 +159,7 @@ int buildDmg(AbstractFile* abstractIn, AbstractFile* abstractOut, unsigned int B
 	}
 
 	blkx = insertBLKX(abstractOut, abstractIn, USER_OFFSET, (volumeHeader->totalBlocks * volumeHeader->blockSize)/SECTOR_SIZE,
-				pNum, CHECKSUM_UDIF_CRC32, &BlockSHA1CRC, &uncompressedToken, &CRCProxy, &dataForkToken, volume, attribution, NULL);
+				pNum, CHECKSUM_UDIF_CRC32, &BlockSHA1CRC, &uncompressedToken, &CRCProxy, &dataForkToken, volume, attribution, comp);
 
 	AttributionResource attributionResource;
 	memset(&attributionResource, 0, sizeof(AttributionResource));
@@ -291,7 +291,7 @@ int buildDmg(AbstractFile* abstractIn, AbstractFile* abstractOut, unsigned int B
 	return TRUE;
 }
 
-int convertToDMG(AbstractFile* abstractIn, AbstractFile* abstractOut) {
+int convertToDMG(AbstractFile* abstractIn, AbstractFile* abstractOut, Compressor *comp) {
 	Partition* partitions;
 	DriverDescriptorRecord* DDM;
 	int i;
@@ -340,7 +340,7 @@ int convertToDMG(AbstractFile* abstractIn, AbstractFile* abstractOut) {
 	
 	if(DDM->sbSig == DRIVER_DESCRIPTOR_SIGNATURE) {
 		BlockSize = DDM->sbBlkSize;
-		int pNum = writeDriverDescriptorMap(-1, abstractOut, DDM, BlockSize, &CRCProxy, (void*) (&dataForkToken), &resources);
+		int pNum = writeDriverDescriptorMap(-1, abstractOut, DDM, BlockSize, &CRCProxy, (void*) (&dataForkToken), &resources, comp);
 		free(DDM);
 		
 		printf("Processing partition map...\n"); fflush(stdout);
@@ -371,7 +371,7 @@ int convertToDMG(AbstractFile* abstractIn, AbstractFile* abstractOut) {
 			
 			abstractIn->seek(abstractIn, partitions[i].pmPyPartStart * BlockSize);
 			blkx = insertBLKX(abstractOut, abstractIn, partitions[i].pmPyPartStart, partitions[i].pmPartBlkCnt, i, CHECKSUM_UDIF_CRC32,
-						&BlockCRC, &uncompressedToken, &CRCProxy, &dataForkToken, NULL, NULL, NULL);
+						&BlockCRC, &uncompressedToken, &CRCProxy, &dataForkToken, NULL, NULL, comp);
 			
 			blkx->checksum.data[0] = uncompressedToken.crc;	
 			resources = insertData(resources, "blkx", i, partitionName, 0, false, (const char*) blkx, sizeof(BLKXTable) + (blkx->blocksRunCount * sizeof(BLKXRun)), ATTRIBUTE_HDIUTIL);
@@ -412,7 +412,7 @@ int convertToDMG(AbstractFile* abstractIn, AbstractFile* abstractOut) {
 		
 		abstractIn->seek(abstractIn, 0);
 		blkx = insertBLKX(abstractOut, abstractIn, 0, fileLength/SECTOR_SIZE, ENTIRE_DEVICE_DESCRIPTOR, CHECKSUM_UDIF_CRC32,
-					&BlockCRC, &uncompressedToken, &CRCProxy, &dataForkToken, NULL, NULL, NULL);
+					&BlockCRC, &uncompressedToken, &CRCProxy, &dataForkToken, NULL, NULL, comp);
 		blkx->checksum.data[0] = uncompressedToken.crc;
 		resources = insertData(resources, "blkx", 0, "whole disk (unknown partition : 0)", 0, false, (const char*) blkx, sizeof(BLKXTable) + (blkx->blocksRunCount * sizeof(BLKXRun)), ATTRIBUTE_HDIUTIL);
 		free(blkx);

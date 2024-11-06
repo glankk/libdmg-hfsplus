@@ -499,7 +499,7 @@ DriverDescriptorRecord* createDriverDescriptorMap(uint32_t numSectors, unsigned 
 }
 
 int writeDriverDescriptorMap(int pNum, AbstractFile* file, DriverDescriptorRecord* DDM, unsigned int BlockSize, ChecksumFunc dataForkChecksum, void* dataForkToken,
-				ResourceKey **resources) {
+				ResourceKey **resources, Compressor *comp) {
   AbstractFile* bufferFile;
   BLKXTable* blkx;
   ChecksumToken uncompressedToken;
@@ -514,7 +514,7 @@ int writeDriverDescriptorMap(int pNum, AbstractFile* file, DriverDescriptorRecor
   bufferFile = createAbstractFileFromMemory((void**)&buffer, DDM_SIZE * BlockSize);
   
   blkx = insertBLKX(file, bufferFile, DDM_OFFSET, DDM_SIZE, DDM_DESCRIPTOR, CHECKSUM_UDIF_CRC32, &CRCProxy, &uncompressedToken,
-            dataForkChecksum, dataForkToken, NULL, NULL, NULL);
+            dataForkChecksum, dataForkToken, NULL, NULL, comp);
               
   blkx->checksum.data[0] = uncompressedToken.crc;
   
@@ -534,7 +534,7 @@ int writeDriverDescriptorMap(int pNum, AbstractFile* file, DriverDescriptorRecor
   return pNum;
 }
 
-int writeApplePartitionMap(int pNum, AbstractFile* file, Partition* partitions, unsigned int BlockSize, ChecksumFunc dataForkChecksum, void* dataForkToken, ResourceKey **resources, NSizResource** nsizIn) {
+int writeApplePartitionMap(int pNum, AbstractFile* file, Partition* partitions, unsigned int BlockSize, ChecksumFunc dataForkChecksum, void* dataForkToken, ResourceKey **resources, NSizResource** nsizIn, Compressor *comp) {
   AbstractFile* bufferFile;
   BLKXTable* blkx;
   ChecksumToken uncompressedToken;
@@ -552,7 +552,7 @@ int writeApplePartitionMap(int pNum, AbstractFile* file, Partition* partitions, 
   bufferFile = createAbstractFileFromMemory((void**)&buffer, realPartitionSize);
    
   blkx = insertBLKX(file, bufferFile, PARTITION_OFFSET * BlockSize / SECTOR_SIZE, realPartitionSize / SECTOR_SIZE, pNum, CHECKSUM_UDIF_CRC32,
-              &BlockCRC, &uncompressedToken, dataForkChecksum, dataForkToken, NULL, NULL, NULL);
+              &BlockCRC, &uncompressedToken, dataForkChecksum, dataForkToken, NULL, NULL, comp);
   
   bufferFile->close(bufferFile);
 
@@ -588,7 +588,7 @@ int writeApplePartitionMap(int pNum, AbstractFile* file, Partition* partitions, 
   return pNum + 1;
 }
 
-int writeATAPI(int pNum, AbstractFile* file, unsigned int BlockSize, ChecksumFunc dataForkChecksum, void* dataForkToken, ResourceKey **resources, NSizResource** nsizIn) {
+int writeATAPI(int pNum, AbstractFile* file, unsigned int BlockSize, ChecksumFunc dataForkChecksum, void* dataForkToken, ResourceKey **resources, NSizResource** nsizIn, Compressor *comp) {
   AbstractFile* bufferFile;
   BLKXTable* blkx;
   ChecksumToken uncompressedToken;
@@ -606,12 +606,12 @@ int writeATAPI(int pNum, AbstractFile* file, unsigned int BlockSize, ChecksumFun
   if(BlockSize != SECTOR_SIZE)
   {
     blkx = insertBLKX(file, bufferFile, ATAPI_OFFSET, BlockSize / SECTOR_SIZE, pNum, CHECKSUM_UDIF_CRC32,
-                &BlockCRC, &uncompressedToken, dataForkChecksum, dataForkToken, NULL, NULL, NULL);
+                &BlockCRC, &uncompressedToken, dataForkChecksum, dataForkToken, NULL, NULL, comp);
   }
   else
   {
     blkx = insertBLKX(file, bufferFile, ATAPI_OFFSET, ATAPI_SIZE, pNum, CHECKSUM_UDIF_CRC32,
-                &BlockCRC, &uncompressedToken, dataForkChecksum, dataForkToken, NULL, NULL, NULL);
+                &BlockCRC, &uncompressedToken, dataForkChecksum, dataForkToken, NULL, NULL, comp);
   }
 
   bufferFile->close(bufferFile);
