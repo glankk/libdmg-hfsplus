@@ -46,3 +46,12 @@ Round trip lzfse. Ensure we produce a different dmg file from bzip2.
   $ $BUILDDIR/dmg/dmg extract $OUTPUT/built.dmg $OUTPUT/out.hfs >/dev/null
   $ shasum $OUTPUT/out.hfs
   c89aae137a58e6a2b7df602d0963970e3a88de08  */out.hfs (glob)
+
+Round trip with level and run-sector parameters.
+
+  $ rm -f $OUTPUT/out.hfs
+  $ $BUILDDIR/dmg/dmg -c zlib -l 2 -r 2048 build $OUTPUT/orig.hfs $OUTPUT/built.dmg >/dev/null
+  $ test "$(shasum $OUTPUT/built.dmg | awk '{print $1}')" != $BZIP2_SHA
+  $ $BUILDDIR/dmg/dmg extract $OUTPUT/built.dmg $OUTPUT/out.hfs >/dev/null
+  $ shasum $OUTPUT/out.hfs
+  c89aae137a58e6a2b7df602d0963970e3a88de08  */out.hfs (glob)
