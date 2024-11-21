@@ -28,3 +28,21 @@ Round trip zlib. Ensure we produce a different dmg file from bzip2.
   $ $BUILDDIR/dmg/dmg extract $OUTPUT/built.dmg $OUTPUT/out.hfs >/dev/null
   $ shasum $OUTPUT/out.hfs
   c89aae137a58e6a2b7df602d0963970e3a88de08  */out.hfs (glob)
+
+Round trip lzma. Ensure we produce a different dmg file from bzip2.
+
+  $ rm -f $OUTPUT/out.hfs
+  $ $BUILDDIR/dmg/dmg -J lzma build $OUTPUT/orig.hfs $OUTPUT/built.dmg >/dev/null
+  $ test "$(shasum $OUTPUT/built.dmg | awk '{print $1}')" != $BZIP2_SHA
+  $ $BUILDDIR/dmg/dmg extract $OUTPUT/built.dmg $OUTPUT/out.hfs >/dev/null
+  $ shasum $OUTPUT/out.hfs
+  c89aae137a58e6a2b7df602d0963970e3a88de08  */out.hfs (glob)
+
+Round trip lzfse. Ensure we produce a different dmg file from bzip2.
+
+  $ rm -f $OUTPUT/out.hfs
+  $ $BUILDDIR/dmg/dmg -J lzfse build $OUTPUT/orig.hfs $OUTPUT/built.dmg >/dev/null
+  $ test "$(shasum $OUTPUT/built.dmg | awk '{print $1}')" != $BZIP2_SHA
+  $ $BUILDDIR/dmg/dmg extract $OUTPUT/built.dmg $OUTPUT/out.hfs >/dev/null
+  $ shasum $OUTPUT/out.hfs
+  c89aae137a58e6a2b7df602d0963970e3a88de08  */out.hfs (glob)
