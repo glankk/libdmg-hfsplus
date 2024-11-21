@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <getopt.h>
 
 #include <dmg/dmg.h>
 #include <dmg/filevault.h>
@@ -33,56 +34,13 @@ int buildInOut(const char* source, const char* dest, AbstractFile** in, Abstract
 }
 
 void usage(const char *name) {
-	printf("usage: %s (OPTIONS) [extract|build|build2048|res|iso|dmg|attribute] <in> <out> (partition)\n", name);
+	printf("usage: %s [OPTIONS] [extract|build|build2048|res|iso|dmg|attribute] <in> <out> (partition)\n", name);
 	printf("OPTIONS:\n");
-	printf("\t-k\tkey\n");
-	printf("\t-J\tcompressor name (%s)\n", compressionNames());
-	printf("\t-L\tcompression level\n");
-	printf("\t-r\trun size (in sectors)\n");
+	printf("\t--key, -k           key\n");
+	printf("\t--compression, -c   compressor name (%s)\n", compressionNames());
+	printf("\t--level, -l         compression level\n");
+	printf("\t--run-sectors, -r   run size (in sectors)\n");
 	exit(2);
-}
-
-/* Mini getopt. Contrary to macOS's getopt, allow options after positionals */
-static int moptind = 0;
-static int moptdst, moptdone;
-static char *moptarg;
-
-int mgetopt(int argc, char** argv, char *optstr)
-{
-	char *opt;
-	int i;
-
-	if (moptind == 0) { /* setup */
-		moptind = 1;
-		moptdst = 1; /* position in argv next arg will be moved to */
-		moptdone = 0; /* when we've seen -- */
-	}
-
-	while (moptind < argc) {
-		char *opt = argv[moptind++];
-		if (moptdone || opt[0] != '-' || strcmp(opt, "-") == 0) { /* - can be positional */
-			argv[moptdst++] = opt; /* positional arg, move it before options */
-			continue;
-		}
-		if (strcmp(opt, "--") == 0) {
-			moptdone = 1;
-			continue;
-		}
-
-		if (moptind >= argc || strlen(opt) != 2 || strchr(optstr, opt[1]) == NULL) {
-			usage(argv[0]);
-		}
-
-		moptarg = argv[moptind++];
-		return opt[1];
-	}
-
-	/* done with options, put positions args such that they end at argc */
-	for (i = 1; i < moptdst; i++) {
-		argv[argc - i] = argv[moptdst - i];
-	}
-	moptind = argc - (moptdst - 1);
-	return -1;
 }
 
 int main(int argc, char* argv[]) {
@@ -99,37 +57,48 @@ int main(int argc, char* argv[]) {
 	TestByteOrder();
 	getCompressor(&comp, NULL);
 
-	while ((opt = mgetopt(argc, argv, "kJLr")) != -1) {
+	const char *optstring = "k:c:l:r:";
+	const struct option longopts[] = {
+		{"key", required_argument, NULL, 'k'},
+		{"compression", required_argument, NULL, 'c'},
+		{"level", required_argument, NULL, 'l'},
+		{"run-sectors", required_argument, NULL, 'r'},
+		{NULL, 0, NULL, 0},
+	};
+
+	while ((opt = getopt_long(argc, argv, optstring, longopts, NULL)) != -1) {
 		switch (opt) {
 			case 'k':
-				key = moptarg;
+				key = optarg;
 				break;
-			case 'J':
-				ret = getCompressor(&comp, moptarg);
+			case 'c':
+				ret = getCompressor(&comp, optarg);
 				if (ret != 0) {
-					fprintf(stderr, "Unknown compressor \"%s\"\nAllowed options are: %s\n", moptarg, compressionNames());
+					fprintf(stderr, "Unknown compressor \"%s\"\nAllowed options are: %s\n", optarg, compressionNames());
 					return 2;
 				}
 				break;
-			case 'L':
-				sscanf(moptarg, "%d", &comp.level);
+			case 'l':
+				sscanf(optarg, "%d", &comp.level);
 				break;
 			case 'r':
-				sscanf(moptarg, "%d", &runSectors);
+				sscanf(optarg, "%d", &runSectors);
 				if (runSectors < DEFAULT_SECTORS_AT_A_TIME) {
 					fprintf(stderr, "Run size must be at least %d sectors\n", DEFAULT_SECTORS_AT_A_TIME);
 					return 2;
 				}
 				break;
+			default:
+				usage(argv[0]);
 		}
 	}
 
-	if (argc < moptind + 3) {
+	if (argc < optind + 3) {
 		usage(argv[0]);
 	}
-	cmd = argv[moptind++];
-	infile = argv[moptind++];
-	outfile = argv[moptind++];
+	cmd = argv[optind++];
+	infile = argv[optind++];
+	outfile = argv[optind++];
 
 	if(!buildInOut(infile, outfile, &in, &out)) {
 		return -1;
@@ -140,14 +109,14 @@ int main(int argc, char* argv[]) {
 
 	if(strcmp(cmd, "extract") == 0) {
 		partNum = -1;
-		if (moptind < argc) {
-				sscanf(argv[moptind++], "%d", &partNum);
+		if (optind < argc) {
+				sscanf(argv[optind++], "%d", &partNum);
 		}
 		extractDmg(in, out, partNum);
 	} else if(strcmp(cmd, "build") == 0) {
 		char *anchor = NULL;
-		if (moptind < argc) {
-			anchor = argv[moptind++];
+		if (optind < argc) {
+			anchor = argv[optind++];
 		}
 		buildDmg(in, out, SECTOR_SIZE, anchor, &comp, runSectors);
 	} else if(strcmp(cmd, "build2048") == 0) {
@@ -160,12 +129,12 @@ int main(int argc, char* argv[]) {
 		convertToDMG(in, out, &comp, runSectors);
 	} else if(strcmp(cmd, "attribute") == 0) {
 		char *anchor, *data;
-		if(argc < moptind + 2) {
+		if(argc < optind + 2) {
 			printf("Not enough arguments: attribute <in> <out> <sentinel> <string>");
 			return 2;
 		}
-		anchor = argv[moptind++];
-		data = argv[moptind++];
+		anchor = argv[optind++];
+		data = argv[optind++];
 		updateAttribution(in, out, anchor, data, strlen(data));
 	}
 

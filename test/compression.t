@@ -14,7 +14,7 @@ Make sure we have a fresh build.
 Round trip bzip2.
 
   $ rm -f $OUTPUT/out.hfs
-  $ $BUILDDIR/dmg/dmg -J bzip2 build $OUTPUT/orig.hfs $OUTPUT/built.dmg >/dev/null
+  $ $BUILDDIR/dmg/dmg -c bzip2 build $OUTPUT/orig.hfs $OUTPUT/built.dmg >/dev/null
   $ export BZIP2_SHA=$(shasum $OUTPUT/built.dmg | awk '{print $1}')
   $ $BUILDDIR/dmg/dmg extract $OUTPUT/built.dmg $OUTPUT/out.hfs >/dev/null
   $ shasum $OUTPUT/out.hfs
@@ -23,7 +23,7 @@ Round trip bzip2.
 Round trip zlib. Ensure we produce a different dmg file from bzip2.
 
   $ rm -f $OUTPUT/out.hfs
-  $ $BUILDDIR/dmg/dmg -J zlib build $OUTPUT/orig.hfs $OUTPUT/built.dmg >/dev/null
+  $ $BUILDDIR/dmg/dmg -c zlib build $OUTPUT/orig.hfs $OUTPUT/built.dmg >/dev/null
   $ test "$(shasum $OUTPUT/built.dmg | awk '{print $1}')" != $BZIP2_SHA
   $ $BUILDDIR/dmg/dmg extract $OUTPUT/built.dmg $OUTPUT/out.hfs >/dev/null
   $ shasum $OUTPUT/out.hfs
@@ -32,7 +32,7 @@ Round trip zlib. Ensure we produce a different dmg file from bzip2.
 Round trip lzma. Ensure we produce a different dmg file from bzip2.
 
   $ rm -f $OUTPUT/out.hfs
-  $ $BUILDDIR/dmg/dmg -J lzma build $OUTPUT/orig.hfs $OUTPUT/built.dmg >/dev/null
+  $ $BUILDDIR/dmg/dmg -c lzma build $OUTPUT/orig.hfs $OUTPUT/built.dmg >/dev/null
   $ test "$(shasum $OUTPUT/built.dmg | awk '{print $1}')" != $BZIP2_SHA
   $ $BUILDDIR/dmg/dmg extract $OUTPUT/built.dmg $OUTPUT/out.hfs >/dev/null
   $ shasum $OUTPUT/out.hfs
@@ -41,7 +41,7 @@ Round trip lzma. Ensure we produce a different dmg file from bzip2.
 Round trip lzfse. Ensure we produce a different dmg file from bzip2.
 
   $ rm -f $OUTPUT/out.hfs
-  $ $BUILDDIR/dmg/dmg -J lzfse build $OUTPUT/orig.hfs $OUTPUT/built.dmg >/dev/null
+  $ $BUILDDIR/dmg/dmg -c lzfse build $OUTPUT/orig.hfs $OUTPUT/built.dmg >/dev/null
   $ test "$(shasum $OUTPUT/built.dmg | awk '{print $1}')" != $BZIP2_SHA
   $ $BUILDDIR/dmg/dmg extract $OUTPUT/built.dmg $OUTPUT/out.hfs >/dev/null
   $ shasum $OUTPUT/out.hfs
