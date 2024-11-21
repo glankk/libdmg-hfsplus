@@ -1,4 +1,4 @@
-INCLUDE(FindOpenSSL)
+find_package(OpenSSL 1.1)
 INCLUDE(FindZLIB)
 INCLUDE(FindBZip2)
 INCLUDE(FindLibLZMA)
