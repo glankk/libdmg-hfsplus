@@ -115,7 +115,7 @@ int buildDmg(AbstractFile* abstractIn, AbstractFile* abstractOut, unsigned int B
 	uint32_t dataForkChecksum;
 	
 	io = IOFuncFromAbstractFile(abstractIn);
-	volume = openVolume(io); 
+	ASSERT(volume = openVolume(io), "parse HFS volume");
 	volumeHeader = volume->volumeHeader;
 	
 
