@@ -1,6 +1,7 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -31,7 +32,17 @@
 #define APPLE_TO_UNIX_TIME(x) ((x) - TIME_OFFSET_FROM_UNIX)
 #define UNIX_TO_APPLE_TIME(x) ((x) + TIME_OFFSET_FROM_UNIX)
 
-#define ASSERT(x, m) if(!(x)) { fflush(stdout); fprintf(stderr, "error: %s\n", m); perror("error"); fflush(stderr); exit(1); }
+#define ASSERT(x, m) if(!(x)) { assertPrint(m); }
+
+static inline void assertPrint(const char *msg) {
+	int errsave = errno;
+	fflush(stdout);
+	fprintf(stderr, "error: %s\n", msg);
+	if (errsave != 0)
+		fprintf(stderr, "system error: %s\n", strerror(errsave));
+	fflush(stderr);
+	exit(1);
+}
 
 extern char endianness;
 
