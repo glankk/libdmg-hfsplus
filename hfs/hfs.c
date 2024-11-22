@@ -299,7 +299,7 @@ void cmd_setattr(Volume* volume, int argc, const char *argv[]) {
 		}
 		data = malloc(sizeof(uint8_t) * (dataLen));
 		memset(data, 0, dataLen);
-		strcpy((char*) data, argv[3]);
+		memcpy(data, argv[3], strlen(argv[3]));
 
 		ASSERT(setAttribute(volume, id, argv[2], data, dataLen), "setAttribute");
 	} else {

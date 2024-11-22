@@ -189,7 +189,7 @@ AbstractAttribution* createAbstractAttributionPreservingSentinel(const char* sen
 
 	AttributionPreservingSentinelData* data = malloc(sizeof(AttributionPreservingSentinelData));
 	memset(data, 0, sizeof(AttributionPreservingSentinelData));
-	data->sentinel = malloc(strlen(sentinel));
+	data->sentinel = malloc(strlen(sentinel) + 1);
 	strcpy(data->sentinel, sentinel);
 	data->raw_UncompressedLength = -1;
 	data->afterRaw_UncompressedLength = -1;
