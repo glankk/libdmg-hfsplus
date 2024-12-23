@@ -33,7 +33,7 @@ typedef struct {
 	// Read
 	pthread_mutex_t inMut;
 	AbstractFile* in;
-	uint32_t numSectors;
+	uint32_t sectorsRemain;
 	uint32_t sectorsRead;
 	uint32_t curRun;
 	uint64_t curSector;
@@ -80,7 +80,7 @@ static void blockFree(block* b) {
 static block* blockRead(threadData* d) {
 	ASSERT(pthread_mutex_lock(&d->inMut) == 0, "pthread_mutex_lock");
 
-	if (d->numSectors == 0) {
+	if (d->sectorsRemain == 0) {
 		ASSERT(pthread_mutex_unlock(&d->inMut) == 0, "pthread_mutex_unlock");
 		return NULL;
 	}
@@ -88,7 +88,7 @@ static block* blockRead(threadData* d) {
 	block* b = blockAlloc(d->bufferSize, d->curRun);
 		
 	b->run.sectorStart = d->curSector;
-	b->run.sectorCount = (d->numSectors > d->runSectors) ? d->runSectors : d->numSectors;
+	b->run.sectorCount = (d->sectorsRemain > d->runSectors) ? d->runSectors : d->sectorsRemain;
 	size_t readSize = b->run.sectorCount * SECTOR_SIZE;
 
 	if (b->idx == 0) {
@@ -99,11 +99,11 @@ static block* blockRead(threadData* d) {
 		b->insize = d->nextInSize;
 	}
 
-	if (d->numSectors - b->run.sectorCount > 0) {
+	if (d->sectorsRemain - b->run.sectorCount > 0) {
 		d->nextInSize = d->in->read(d->in, d->nextInBuffer, readSize);
 	}
 
-	// printf("run %d: sectors=%" PRId64 ", left=%d\n", b->idx, b->run.sectorCount, d->numSectors);
+	// printf("run %d: sectors=%" PRId64 ", left=%d\n", b->idx, b->run.sectorCount, d->sectorsRemain);
 
 	if (d->attribution) {
 		// We either haven't found the sentinel value yet, or are already past it.
@@ -128,7 +128,7 @@ static block* blockRead(threadData* d) {
 	}
 	
 	d->curSector += b->run.sectorCount;
-	d->numSectors -= b->run.sectorCount;
+	d->sectorsRemain -= b->run.sectorCount;
 	d->sectorsRead += b->run.sectorCount;
 	d->curRun++;
 
@@ -220,7 +220,7 @@ BLKXTable* insertBLKX(AbstractFile* out_, AbstractFile* in_, uint32_t firstSecto
 		.out = out_,
 		.in = in_,
 		.runSectors = runSectors,
-		.numSectors = numSectors_,
+		.sectorsRemain = numSectors_,
 		.sectorsRead = 0,
 		.uncompressedChk = uncompressedChk_,
 		.uncompressedChkToken = uncompressedChkToken_,
