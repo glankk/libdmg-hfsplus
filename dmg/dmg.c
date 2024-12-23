@@ -16,8 +16,14 @@ void TestByteOrder()
 	endianness = byte[0] ? IS_LITTLE_ENDIAN : IS_BIG_ENDIAN;
 }
 
+static AbstractFile* buildIn(const char* arg) {
+	if (strcmp(arg, "-") == 0)
+		return createAbstractFileFromPipe(stdin);
+	return createAbstractFileFromFile(fopen(arg, "rb"));
+}
+
 int buildInOut(const char* source, const char* dest, AbstractFile** in, AbstractFile** out) {
-	*in = createAbstractFileFromFile(fopen(source, "rb"));
+	*in = buildIn(source);
 	if(!(*in)) {
 		printf("cannot open source: %s\n", source);
 		return FALSE;

@@ -309,3 +309,97 @@ AbstractFile* createAbstractFileFromMemoryFileBuffer(void** buffer, size_t* size
 	return toReturn;
 }
 
+#define PIPE_BUFFER_SIZE 4096
+
+typedef struct {
+	FILE* file;
+	off_t pos;
+	// Keep the first N bytes of the file in memory, since we like parsing headers
+	char *buffer;
+	size_t bufferSize;
+} PipeWrapperInfo;
+
+static size_t pipeRead(AbstractFile* file, void* data, size_t len) {
+	PipeWrapperInfo* info = (PipeWrapperInfo*) (file->data);
+	size_t ret = 0;
+
+	if (info->pos < info->bufferSize) {
+		size_t bufAvail = info->bufferSize - info->pos;
+		size_t bufBytes = len > bufAvail ? bufAvail : len;
+		memcpy(data, info->buffer + info->pos, bufBytes);
+		data += bufBytes;
+		info->pos += bufBytes;
+		len -= bufBytes;
+		ret += bufBytes;
+		if (len == 0)
+			return bufBytes;
+	}
+
+	size_t read = fread(data, 1, len, info->file);
+	info->pos += read;
+	ret += read;
+
+	return ret;
+}
+
+static size_t pipeWrite(AbstractFile* file, const void* data, size_t len) {
+  return -1;
+}
+
+static int pipeSeek(AbstractFile* file, off_t offset) {
+	PipeWrapperInfo* info = (PipeWrapperInfo*) (file->data);
+	if (info->pos < info->bufferSize) {
+		info->pos = offset;
+		return 0;
+	}
+	return -1;
+}
+
+static off_t pipeTell(AbstractFile* file) {
+	PipeWrapperInfo* info = (PipeWrapperInfo*) (file->data);
+	return info->pos;
+}
+
+static void pipeClose(AbstractFile* file) {
+	PipeWrapperInfo* info = (PipeWrapperInfo*) (file->data);
+	fclose(info->file);
+	free(info->buffer);
+	free(info);
+	free(file);
+}
+
+static off_t pipeGetLength(AbstractFile* file) {
+	return 439353344; // FIXME: remove test length, support unknown length
+}
+
+AbstractFile* createAbstractFileFromPipe(FILE* file) {
+	AbstractFile* toReturn;
+	PipeWrapperInfo *info;
+	size_t bytesRead;
+
+	if(file == NULL) {
+		return NULL;
+	}
+
+	info = (PipeWrapperInfo*) malloc(sizeof(PipeWrapperInfo));
+	info->file = file;
+	info->pos = 0;
+	info->bufferSize = PIPE_BUFFER_SIZE;
+	info->buffer = malloc(info->bufferSize);
+
+	bytesRead = fread(info->buffer, 1, info->bufferSize, file);
+	if (bytesRead < info->bufferSize) {
+		info->bufferSize = bytesRead;
+	}
+
+	toReturn = (AbstractFile*) malloc(sizeof(AbstractFile));
+	toReturn->data = info;
+	toReturn->read = pipeRead;
+	toReturn->write = pipeWrite;
+	toReturn->seek = pipeSeek;
+	toReturn->tell = pipeTell;
+	toReturn->getLength = pipeGetLength;
+	toReturn->close = pipeClose;
+	toReturn->type = AbstractFileTypePipe;
+	return toReturn;
+}

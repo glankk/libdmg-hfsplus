@@ -24,7 +24,8 @@ typedef enum AbstractFileType {
 	AbstractFileTypeIBootIM,
 	AbstractFileTypeMem,
 	AbstractFileTypeMemFile,
-	AbstractFileTypeDummy
+	AbstractFileTypeDummy,
+	AbstractFileTypePipe
 } AbstractFileType;
 
 struct AbstractFile {
@@ -65,6 +66,7 @@ extern "C" {
 	AbstractFile* createAbstractFileFromMemory(void** buffer, size_t size);
 	AbstractFile* createAbstractFileFromMemoryFile(void** buffer, size_t* size);
 	AbstractFile* createAbstractFileFromMemoryFileBuffer(void** buffer, size_t* size, size_t actualBufferSize);
+	AbstractFile* createAbstractFileFromPipe(FILE* file);
 	void abstractFilePrint(AbstractFile* file, const char* format, ...);
 	io_func* IOFuncFromAbstractFile(AbstractFile* file);
 #ifdef __cplusplus
