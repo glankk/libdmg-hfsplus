@@ -14,6 +14,7 @@ typedef off_t (*TellFunc)(AbstractFile* file);
 typedef void (*CloseFunc)(AbstractFile* file);
 typedef off_t (*GetLengthFunc)(AbstractFile* file);
 typedef void (*SetKeyFunc)(AbstractFile2* file, const unsigned int* key, const unsigned int* iv);
+typedef int (*EOFFunc)(AbstractFile* file);
 
 typedef enum AbstractFileType {
 	AbstractFileTypeFile,
@@ -37,6 +38,7 @@ struct AbstractFile {
 	GetLengthFunc getLength;
 	CloseFunc close;
 	AbstractFileType type;
+	EOFFunc eof;
 };
 
 struct AbstractFile2 {

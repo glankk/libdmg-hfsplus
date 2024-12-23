@@ -42,6 +42,10 @@ off_t fileGetLength(AbstractFile* file) {
 	return length;
 }
 
+int fileEOF(AbstractFile* file) {
+	return feof((FILE*) (file->data));
+}
+
 AbstractFile* createAbstractFileFromFile(FILE* file) {
 	AbstractFile* toReturn;
 
@@ -57,6 +61,7 @@ AbstractFile* createAbstractFileFromFile(FILE* file) {
 	toReturn->tell = ftellWrapper;
 	toReturn->getLength = fileGetLength;
 	toReturn->close = fcloseWrapper;
+	toReturn->eof = fileEOF;
 	toReturn->type = AbstractFileTypeFile;
 	return toReturn;
 }
@@ -83,6 +88,10 @@ void dummyClose(AbstractFile* file) {
   free(file);
 }
 
+int dummyEOF(AbstractFile* file) {
+	return 1;
+}
+
 AbstractFile* createAbstractFileFromDummy() {
 	AbstractFile* toReturn;
 	toReturn = (AbstractFile*) malloc(sizeof(AbstractFile));
@@ -93,6 +102,7 @@ AbstractFile* createAbstractFileFromDummy() {
 	toReturn->tell = dummyTell;
 	toReturn->getLength = NULL;
 	toReturn->close = dummyClose;
+	toReturn->eof = dummyEOF;
 	toReturn->type = AbstractFileTypeDummy;
 	return toReturn;
 }
@@ -141,6 +151,11 @@ void memClose(AbstractFile* file) {
   free(file);
 }
 
+int memEOF(AbstractFile* file) {
+  MemWrapperInfo* info = (MemWrapperInfo*) (file->data);
+	return info->offset >= info->bufferSize;
+}
+
 AbstractFile* createAbstractFileFromMemory(void** buffer, size_t size) {
 	MemWrapperInfo* info;
 	AbstractFile* toReturn;
@@ -158,6 +173,7 @@ AbstractFile* createAbstractFileFromMemory(void** buffer, size_t size) {
 	toReturn->tell = memTell;
 	toReturn->getLength = memGetLength;
 	toReturn->close = memClose;
+	toReturn->eof = memEOF;
 	toReturn->type = AbstractFileTypeMem;
 	return toReturn;
 }
@@ -262,6 +278,11 @@ void memFileClose(AbstractFile* file) {
   free(file);
 }
 
+int memFileEOF(AbstractFile* file) {
+	MemFileWrapperInfo* info = (MemFileWrapperInfo*) (file->data);
+	return info->offset >= info->actualBufferSize;
+}
+
 AbstractFile* createAbstractFileFromMemoryFile(void** buffer, size_t* size) {
 	MemFileWrapperInfo* info;
 	AbstractFile* toReturn;
@@ -283,6 +304,7 @@ AbstractFile* createAbstractFileFromMemoryFile(void** buffer, size_t* size) {
 	toReturn->tell = memFileTell;
 	toReturn->getLength = memFileGetLength;
 	toReturn->close = memFileClose;
+	toReturn->eof = memFileEOF;
 	toReturn->type = AbstractFileTypeMemFile;
 	return toReturn;
 }
@@ -372,6 +394,11 @@ static off_t pipeGetLength(AbstractFile* file) {
 	return 439353344; // FIXME: remove test length, support unknown length
 }
 
+static int pipeEOF(AbstractFile* file) {
+	PipeWrapperInfo* info = (PipeWrapperInfo*) (file->data);
+	return feof(info->file);
+}
+
 AbstractFile* createAbstractFileFromPipe(FILE* file) {
 	AbstractFile* toReturn;
 	PipeWrapperInfo *info;
@@ -400,6 +427,7 @@ AbstractFile* createAbstractFileFromPipe(FILE* file) {
 	toReturn->tell = pipeTell;
 	toReturn->getLength = pipeGetLength;
 	toReturn->close = pipeClose;
+	toReturn->eof = pipeEOF;
 	toReturn->type = AbstractFileTypePipe;
 	return toReturn;
 }
