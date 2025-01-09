@@ -106,32 +106,28 @@ static block* blockRead(threadData* d) {
 
 	size_t haveSectors = (d->nextInSize / SECTOR_SIZE) + (d->nextInSize % SECTOR_SIZE != 0);
 	size_t wantSectors = nextReadSectors(d);
+	
+	int done = false;
 	if (wantSectors == 0) {
+		done = true;
+	} else if (haveSectors < wantSectors) {
+		ASSERT(untilEOF(d) && d->in->eof(d->in), "couldn't read full block");
+		if (haveSectors == 0)
+			done = true;
+	}
+	if (done) {
 		ASSERT(pthread_mutex_unlock(&d->inMut) == 0, "pthread_mutex_unlock");
 		return NULL;
 	}
 	
-	block* b = blockAlloc(d->bufferSize, d->curRun);
-		
+	block* b = blockAlloc(d->bufferSize, d->curRun);	
 	b->run.sectorStart = d->curSector;
-	b->run.sectorCount = wantSectors;
-	size_t readSize = wantSectors * SECTOR_SIZE;
 
 	// Steal from the next block
+	memset(b->inbuf, 0, d->bufferSize);
 	memcpy(b->inbuf, d->nextInBuffer, d->nextInSize);
-	b->insize = d->nextInSize;
-
-	if (untilEOF(d) && d->in->eof(d->in)) {
-		if (b->insize == 0) {
-			blockFree(b);
-			ASSERT(pthread_mutex_unlock(&d->inMut) == 0, "pthread_mutex_unlock");
-			return NULL;
-		}
-	} else {
-		if (b->insize > readSize)
-			b->insize = readSize;
-		ASSERT(b->insize == readSize, "unexpected block size");
-	}
+	b->insize = haveSectors * SECTOR_SIZE;
+	b->run.sectorCount = haveSectors;
 
 	d->curSector += b->run.sectorCount;
 	if (!untilEOF(d))
