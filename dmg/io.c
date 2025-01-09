@@ -108,6 +108,8 @@ static block* blockRead(threadData* d) {
 			return NULL;
 		}
 	} else {
+		if (b->insize > readSize)
+			b->insize = readSize;
 		ASSERT(b->insize == readSize, "unexpected block size");
 	}
 
