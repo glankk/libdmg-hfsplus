@@ -331,7 +331,7 @@ AbstractFile* createAbstractFileFromMemoryFileBuffer(void** buffer, size_t* size
 	return toReturn;
 }
 
-#define PIPE_BUFFER_SIZE 4096
+#define PIPE_BUFFER_SIZE (1024 * 1024)
 
 typedef struct {
 	off_t pos;
