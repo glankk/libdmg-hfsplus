@@ -119,8 +119,12 @@ static block* blockRead(threadData* d) {
 	d->sectorsRead += b->run.sectorCount;
 	d->curRun++;
 
-	if (untilEOF || d->sectorsRemain > 0) {
-		d->nextInSize = d->in->read(d->in, d->nextInBuffer, readSize);
+	// Read the next block in advance, so we can handle cross-block attribution
+	size_t nextReadSize = ((untilEOF || d->sectorsRemain > d->runSectors) ? d->runSectors : d->sectorsRemain) * SECTOR_SIZE;
+	if (nextReadSize > 0) {
+		d->nextInSize = d->in->read(d->in, d->nextInBuffer, nextReadSize);
+	} else {
+		d->nextInSize = 0;
 	}
 
 
