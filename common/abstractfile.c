@@ -334,8 +334,11 @@ AbstractFile* createAbstractFileFromMemoryFileBuffer(void** buffer, size_t* size
 #define PIPE_BUFFER_SIZE 4096
 
 typedef struct {
-	FILE* file;
 	off_t pos;
+
+	FILE* file;
+	off_t filePos;
+
 	// Keep the first N bytes of the file in memory, since we like parsing headers
 	char *buffer;
 	size_t bufferSize;
@@ -345,6 +348,7 @@ static size_t pipeRead(AbstractFile* file, void* data, size_t len) {
 	PipeWrapperInfo* info = (PipeWrapperInfo*) (file->data);
 	size_t ret = 0;
 
+	// if positioned in the buffer, read from it
 	if (info->pos < info->bufferSize) {
 		size_t bufAvail = info->bufferSize - info->pos;
 		size_t bufBytes = len > bufAvail ? bufAvail : len;
@@ -357,8 +361,15 @@ static size_t pipeRead(AbstractFile* file, void* data, size_t len) {
 			return bufBytes;
 	}
 
+	// if we backed into the header, and didn't reach current pos, we're stuck!
+	if (info->pos != info->filePos) {
+		fprintf(stderr, "can't generally seek backward in pipe\n");
+		return 0;
+	}
+
 	size_t read = fread(data, 1, len, info->file);
 	info->pos += read;
+	info->filePos += read;
 	ret += read;
 
 	return ret;
@@ -414,12 +425,14 @@ AbstractFile* createAbstractFileFromPipe(FILE* file) {
 	}
 
 	info = (PipeWrapperInfo*) malloc(sizeof(PipeWrapperInfo));
-	info->file = file;
 	info->pos = 0;
+	info->file = file;
+	info->filePos = 0;
 	info->bufferSize = PIPE_BUFFER_SIZE;
 	info->buffer = malloc(info->bufferSize);
 
 	bytesRead = fread(info->buffer, 1, info->bufferSize, file);
+	info->filePos += bytesRead;
 	if (bytesRead < info->bufferSize) {
 		info->bufferSize = bytesRead;
 	}
