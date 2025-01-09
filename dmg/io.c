@@ -115,8 +115,6 @@ static block* blockRead(threadData* d) {
 	b->run.sectorCount = nextReadSectors(d);
 	size_t readSize = b->run.sectorCount * SECTOR_SIZE;
 
-	if (b->idx == 0)
-		readNext(d);
 	// Steal from the next block
 	memcpy(b->inbuf, d->nextInBuffer, d->nextInSize);
 	b->insize = d->nextInSize;
@@ -304,6 +302,9 @@ BLKXTable* insertBLKX(AbstractFile* out_, AbstractFile* in_, uint32_t firstSecto
 
 	td.startOff = td.in->tell(td.in);
 	td.keepRaw = KeepNoneRaw;
+
+	// Pre-read the first block
+	readNext(&td);
 
 	size_t nthreads = sysconf(_SC_NPROCESSORS_ONLN) + 2; // input + output
 	pthread_t* threads;
