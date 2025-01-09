@@ -412,7 +412,7 @@ static off_t pipeGetLength(AbstractFile* file) {
 
 static int pipeEOF(AbstractFile* file) {
 	PipeWrapperInfo* info = (PipeWrapperInfo*) (file->data);
-	return feof(info->file);
+	return (info->pos >= info->bufferSize) && feof(info->file);
 }
 
 AbstractFile* createAbstractFileFromPipe(FILE* file) {
