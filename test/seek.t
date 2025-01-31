@@ -17,7 +17,7 @@ Create an input file of reasonable size
   120+0 records in
   120+0 records out
   $ mkfs.hfsplus $STAGEDIR/in.hfs
-  Initialized seek_stagedir/in.hfs as a 120 MB HFS Plus volume
+  Initialized */in.hfs as a 120 MB HFS Plus volume (glob)
   $ $BUILDDIR/hfs/hfsplus $STAGEDIR/in.hfs add $STAGEDIR/file file
   $ SHASUM=$(shasum $STAGEDIR/in.hfs | awk '{print $1}')
 

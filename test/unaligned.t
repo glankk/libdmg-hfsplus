@@ -4,8 +4,8 @@ Make sure we have a fresh build:
   $ cd $BUILDDIR
   $ make 2> /dev/null >/dev/null
   $ cd $CRAMTMP
-  $ export STAGEDIR=seek_stagedir
-  $ export OUTPUT=seek_output
+  $ export STAGEDIR=unaligned_stagedir
+  $ export OUTPUT=unaligned_output
 
 Create an input file, with size not a multiple of block-size
 
@@ -19,7 +19,7 @@ Create an input file, with size not a multiple of block-size
   $ wc -c $STAGEDIR/in.hfs
   1023000 */in.hfs (glob)
   $ mkfs.hfsplus $STAGEDIR/in.hfs
-  Initialized seek_stagedir/in.hfs as a 999 KB HFS Plus volume
+  Initialized */in.hfs as a 999 KB HFS Plus volume (glob)
   $ $BUILDDIR/hfs/hfsplus $STAGEDIR/in.hfs add $STAGEDIR/file file
   $ ORIG_SHA=$(shasum $STAGEDIR/in.hfs | awk '{print $1}')
 
