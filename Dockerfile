@@ -15,11 +15,11 @@ RUN cmake -B /build -DCMAKE_BUILD_TYPE=Release /source
 RUN make -C /build -j$(nproc)
 
 FROM base AS test
-RUN apt-get install -y pipx perl xxd
+RUN apt-get install -y pipx perl xxd hfsprogs
 # We never want to actually make anything
 RUN ln -s /bin/true /bin/make
 RUN pipx install cram
-ENV PATH="/usr/bin:/root/.local/bin"
+ENV PATH="/usr/bin:/usr/sbin:/root/.local/bin"
 RUN mkdir -p /test/build/dmg /test/build/hfs
 COPY --from=build /build/dmg/dmg /test/build/dmg/dmg
 COPY --from=build /build/hfs/hfsplus /test/build/hfs/hfsplus
