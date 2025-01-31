@@ -131,7 +131,6 @@ static block* blockRead(threadData* d) {
 	memset(b->inbuf, 0, d->bufferSize);
 	memcpy(b->inbuf, d->nextInBuffer, d->nextInSize);
 	b->run.sectorCount = divceil(haveBytes, SECTOR_SIZE);
-	printf("block %6d: %5d sectors, end: %ld\n", b->idx, b->run.sectorCount, (b->run.sectorStart + b->run.sectorCount) * SECTOR_SIZE);
 	b->insize = b->run.sectorCount * SECTOR_SIZE;
 	if (b->insize > haveBytes) {
 		memset(b->inbuf + haveBytes, 0, b->insize - haveBytes);
