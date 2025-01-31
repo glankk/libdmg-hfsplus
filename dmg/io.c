@@ -27,14 +27,14 @@ typedef struct block {
 } block;
 
 typedef struct {
-	size_t runSectors;
+	size_t runBytes;
 	size_t bufferSize;
 	AbstractAttribution* attribution;
 
 	// Read
 	pthread_mutex_t inMut;
 	AbstractFile* in;
-	off_t sectorsRemain;
+	off_t bytesRemain;
 	uint32_t sectorsRead;
 	uint32_t curRun;
 	uint64_t curSector;
@@ -80,19 +80,19 @@ static void blockFree(block* b) {
 
 // Are we reading until EOF?
 static int untilEOF(threadData *d) {
-	return d->sectorsRemain == SECTORS_UNTIL_EOF;
+	return d->bytesRemain == READ_UNTIL_EOF;
 }
 
-static size_t nextReadSectors(threadData *d) {
+static size_t nextReadSize(threadData *d) {
 	if (untilEOF(d))
-		return d->runSectors;
-	if (d->sectorsRemain >= d->runSectors)
-		return d->runSectors;
-	return d->sectorsRemain;
+		return d->runBytes;
+	if (d->bytesRemain >= d->runBytes)
+		return d->runBytes;
+	return d->bytesRemain;
 }
 
 static void readNext(threadData* d) {
-	size_t readSize = nextReadSectors(d) * SECTOR_SIZE;
+	size_t readSize = nextReadSize(d);
 	if (readSize > 0) {
 		d->nextInSize = d->in->read(d->in, d->nextInBuffer, readSize);
 	} else {
@@ -100,19 +100,23 @@ static void readNext(threadData* d) {
 	}
 }
 
+static size_t divceil(size_t dividend, size_t divisor) {
+	return (dividend / divisor) + ((dividend % divisor) != 0);
+}
+
 // Return NULL when no more blocks
 static block* blockRead(threadData* d) {
 	ASSERT(pthread_mutex_lock(&d->inMut) == 0, "pthread_mutex_lock");
 
-	size_t haveSectors = (d->nextInSize / SECTOR_SIZE) + (d->nextInSize % SECTOR_SIZE != 0);
-	size_t wantSectors = nextReadSectors(d);
-	
+	size_t haveBytes = d->nextInSize;
+	size_t wantBytes = nextReadSize(d);
+
 	int done = false;
-	if (wantSectors == 0) {
+	if (wantBytes == 0) {
 		done = true;
-	} else if (haveSectors < wantSectors) {
+	} else if (haveBytes != wantBytes) {
 		ASSERT(untilEOF(d) && d->in->eof(d->in), "couldn't read full block");
-		if (haveSectors == 0)
+		if (haveBytes == 0)
 			done = true;
 	}
 	if (done) {
@@ -126,19 +130,23 @@ static block* blockRead(threadData* d) {
 	// Steal from the next block
 	memset(b->inbuf, 0, d->bufferSize);
 	memcpy(b->inbuf, d->nextInBuffer, d->nextInSize);
-	b->insize = haveSectors * SECTOR_SIZE;
-	b->run.sectorCount = haveSectors;
+	b->run.sectorCount = divceil(haveBytes, SECTOR_SIZE);
+	printf("block %6d: %5d sectors, end: %ld\n", b->idx, b->run.sectorCount, (b->run.sectorStart + b->run.sectorCount) * SECTOR_SIZE);
+	b->insize = b->run.sectorCount * SECTOR_SIZE;
+	if (b->insize > haveBytes) {
+		memset(b->inbuf + haveBytes, 0, b->insize - haveBytes);
+	}
 
 	d->curSector += b->run.sectorCount;
 	if (!untilEOF(d))
-		d->sectorsRemain -= b->run.sectorCount;
+		d->bytesRemain -= haveBytes;
 	d->sectorsRead += b->run.sectorCount;
 	d->curRun++;
 
 	// Read the next block in advance, so we can handle cross-block attribution
 	readNext(d);
 
-	// printf("run %d: sectors=%" PRId64 ", left=%d\n", b->idx, b->run.sectorCount, d->sectorsRemain);
+	// printf("run %d: sectors=%" PRId64 ", left=%d\n", b->idx, b->run.sectorCount, d->bytesRemain);
 
 	if (d->attribution) {
 		// We either haven't found the sentinel value yet, or are already past it.
@@ -243,14 +251,14 @@ static void *threadWorker(void* arg) {
 	return NULL;
 }
 
-BLKXTable* insertBLKX(AbstractFile* out_, AbstractFile* in_, uint32_t firstSectorNumber, off_t numSectors_, uint32_t blocksDescriptor,
+BLKXTable* insertBLKX(AbstractFile* out_, AbstractFile* in_, uint32_t firstSectorNumber, off_t bytes, uint32_t blocksDescriptor,
 			uint32_t checksumType, ChecksumFunc uncompressedChk_, void* uncompressedChkToken_, ChecksumFunc compressedChk_,
 			void* compressedChkToken_, Volume* volume, AbstractAttribution* attribution_, Compressor* comp, size_t runSectors) {
 	threadData td = {
 		.out = out_,
 		.in = in_,
-		.runSectors = runSectors,
-		.sectorsRemain = numSectors_,
+		.runBytes = runSectors * SECTOR_SIZE,
+		.bytesRemain = bytes,
 		.sectorsRead = 0,
 		.uncompressedChk = uncompressedChk_,
 		.uncompressedChkToken = uncompressedChkToken_,

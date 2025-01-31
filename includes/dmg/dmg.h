@@ -345,7 +345,7 @@ extern "C" {
 	int writeFreePartition(int pNum, AbstractFile* outFile, uint32_t offset, uint32_t numSectors, ResourceKey** resources);
 
 	void extractBLKX(AbstractFile* in, AbstractFile* out, BLKXTable* blkx);
-	BLKXTable* insertBLKX(AbstractFile* out, AbstractFile* in, uint32_t firstSectorNumber, off_t numSectors, uint32_t blocksDescriptor,
+	BLKXTable* insertBLKX(AbstractFile* out, AbstractFile* in, uint32_t firstSectorNumber, off_t bytes, uint32_t blocksDescriptor,
 	            uint32_t checksumType, ChecksumFunc uncompressedChk, void* uncompressedChkToken, ChecksumFunc compressedChk,
 				void* compressedChkToken, Volume* volume, AbstractAttribution* attribution, Compressor* comp, size_t runSectors);
 

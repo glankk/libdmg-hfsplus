@@ -5,7 +5,7 @@
 #include "abstractfile.h"
 #include "compress.h"
 
-#define SECTORS_UNTIL_EOF (-1)
+#define READ_UNTIL_EOF (-1)
 
 #ifdef __cplusplus
 extern "C" {

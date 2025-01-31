@@ -159,7 +159,7 @@ int buildDmg(AbstractFile* abstractIn, AbstractFile* abstractOut, unsigned int B
 		attribution->beforeMainBlkx(attribution, abstractOut, &dataForkToken);
 	}
 
-	blkx = insertBLKX(abstractOut, abstractIn, USER_OFFSET, (volumeHeader->totalBlocks * volumeHeader->blockSize)/SECTOR_SIZE,
+	blkx = insertBLKX(abstractOut, abstractIn, USER_OFFSET, (volumeHeader->totalBlocks * volumeHeader->blockSize),
 				pNum, CHECKSUM_UDIF_CRC32, &BlockSHA1CRC, &uncompressedToken, &CRCProxy, &dataForkToken, volume, attribution, comp, runSectors);
 
 	AttributionResource attributionResource;
@@ -371,13 +371,13 @@ int convertToDMG(AbstractFile* abstractIn, AbstractFile* abstractOut, Compressor
 			memset(&uncompressedToken, 0, sizeof(uncompressedToken));
 			
 			ASSERT(abstractIn->seek(abstractIn, (off_t)partitions[i].pmPyPartStart * BlockSize) == 0, "seek");
-			blkx = insertBLKX(abstractOut, abstractIn, partitions[i].pmPyPartStart, partitions[i].pmPartBlkCnt, i, CHECKSUM_UDIF_CRC32,
-						&BlockCRC, &uncompressedToken, &CRCProxy, &dataForkToken, NULL, NULL, comp, runSectors);
-			
+			blkx = insertBLKX(abstractOut, abstractIn, partitions[i].pmPyPartStart, (off_t)partitions[i].pmPartBlkCnt * SECTOR_SIZE,
+				i, CHECKSUM_UDIF_CRC32, &BlockCRC, &uncompressedToken, &CRCProxy, &dataForkToken, NULL, NULL, comp, runSectors);
+
 			blkx->checksum.data[0] = uncompressedToken.crc;	
 			resources = insertData(resources, "blkx", i, partitionName, 0, false, (const char*) blkx, sizeof(BLKXTable) + (blkx->blocksRunCount * sizeof(BLKXRun)), ATTRIBUTE_HDIUTIL);
 			free(blkx);
-			
+
 			memset(&csum, 0, sizeof(CSumResource));
 			csum.version = 1;
 			csum.type = CHECKSUM_MKBLOCK;
@@ -407,16 +407,16 @@ int convertToDMG(AbstractFile* abstractIn, AbstractFile* abstractOut, Compressor
 	} else {
 		printf("No DDM! Just doing one huge blkx then...\n"); fflush(stdout);
 		
-		off_t numSectors = SECTORS_UNTIL_EOF;
+		off_t length = READ_UNTIL_EOF;
 		fileLength = abstractIn->getLength(abstractIn);
 		if (fileLength != FILE_SIZE_UNKNOWN) {
-			numSectors = fileLength / SECTOR_SIZE;
+			length = fileLength;
 		}
-		
+
 		memset(&uncompressedToken, 0, sizeof(uncompressedToken));
 		
 		ASSERT(abstractIn->seek(abstractIn, 0) == 0, "seek");
-		blkx = insertBLKX(abstractOut, abstractIn, 0, numSectors, ENTIRE_DEVICE_DESCRIPTOR, CHECKSUM_UDIF_CRC32,
+		blkx = insertBLKX(abstractOut, abstractIn, 0, length, ENTIRE_DEVICE_DESCRIPTOR, CHECKSUM_UDIF_CRC32,
 					&BlockCRC, &uncompressedToken, &CRCProxy, &dataForkToken, NULL, NULL, comp, runSectors);
 		blkx->checksum.data[0] = uncompressedToken.crc;
 		resources = insertData(resources, "blkx", 0, "whole disk (unknown partition : 0)", 0, false, (const char*) blkx, sizeof(BLKXTable) + (blkx->blocksRunCount * sizeof(BLKXRun)), ATTRIBUTE_HDIUTIL);

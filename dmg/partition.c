@@ -513,7 +513,7 @@ int writeDriverDescriptorMap(int pNum, AbstractFile* file, DriverDescriptorRecor
 
   bufferFile = createAbstractFileFromMemory((void**)&buffer, DDM_SIZE * BlockSize);
   
-  blkx = insertBLKX(file, bufferFile, DDM_OFFSET, DDM_SIZE, DDM_DESCRIPTOR, CHECKSUM_UDIF_CRC32, &CRCProxy, &uncompressedToken,
+  blkx = insertBLKX(file, bufferFile, DDM_OFFSET, DDM_SIZE * SECTOR_SIZE, DDM_DESCRIPTOR, CHECKSUM_UDIF_CRC32, &CRCProxy, &uncompressedToken,
             dataForkChecksum, dataForkToken, NULL, NULL, comp, runSectors);
               
   blkx->checksum.data[0] = uncompressedToken.crc;
@@ -551,8 +551,8 @@ int writeApplePartitionMap(int pNum, AbstractFile* file, Partition* partitions, 
   flipPartition(buffer, TRUE, BlockSize);
 
   bufferFile = createAbstractFileFromMemory((void**)&buffer, realPartitionSize);
-   
-  blkx = insertBLKX(file, bufferFile, PARTITION_OFFSET * BlockSize / SECTOR_SIZE, realPartitionSize / SECTOR_SIZE, pNum, CHECKSUM_UDIF_CRC32,
+
+  blkx = insertBLKX(file, bufferFile, PARTITION_OFFSET * BlockSize / SECTOR_SIZE, realPartitionSize, pNum, CHECKSUM_UDIF_CRC32,
               &BlockCRC, &uncompressedToken, dataForkChecksum, dataForkToken, NULL, NULL, comp, runSectors);
   
   bufferFile->close(bufferFile);
@@ -607,12 +607,12 @@ int writeATAPI(int pNum, AbstractFile* file, unsigned int BlockSize, ChecksumFun
 
   if(BlockSize != SECTOR_SIZE)
   {
-    blkx = insertBLKX(file, bufferFile, ATAPI_OFFSET, BlockSize / SECTOR_SIZE, pNum, CHECKSUM_UDIF_CRC32,
+    blkx = insertBLKX(file, bufferFile, ATAPI_OFFSET, BlockSize, pNum, CHECKSUM_UDIF_CRC32,
                 &BlockCRC, &uncompressedToken, dataForkChecksum, dataForkToken, NULL, NULL, comp, runSectors);
   }
   else
   {
-    blkx = insertBLKX(file, bufferFile, ATAPI_OFFSET, ATAPI_SIZE, pNum, CHECKSUM_UDIF_CRC32,
+    blkx = insertBLKX(file, bufferFile, ATAPI_OFFSET, ATAPI_SIZE * SECTOR_SIZE, pNum, CHECKSUM_UDIF_CRC32,
                 &BlockCRC, &uncompressedToken, dataForkChecksum, dataForkToken, NULL, NULL, comp, runSectors);
   }
 
