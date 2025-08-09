@@ -7,15 +7,36 @@
 
 #include <hfs/hfsplus.h>
 #include "abstractfile.h"
+#include "attribution.h"
+#include "common.h"
+#include "compress.h"
 
-#define CHECKSUM_CRC32 0x00000002
+// Okay, this value sucks. You shouldn't touch it because it affects how many ignore sections get added to the blkx list
+// If the blkx list gets too fragmented with ignore sections, then the copy list in certain versions of the iPhone's
+// asr becomes too big. Due to Apple's BUGGY CODE, this causes asr to segfault! This is because the copy list becomes
+// too large for the initial buffer allocated, and realloc is called by asr. Unfortunately, after the realloc, the initial
+// pointer is still used by asr for a little while! Frakking noob mistake.
+
+// The only reason why it works at all is their really idiotic algorithm to determine where to put ignore blocks. It's
+// certainly nothing reasonable like "put in an ignore block if you encounter more than X blank sectors" (like mine)
+// There's always a large-ish one at the end, and a tiny 2 sector one at the end too, to take care of the space after
+// the backup volume header. No frakking clue how they go about determining how to do that.
+
+#define DEFAULT_SECTORS_AT_A_TIME 0x200
+
+#define CHECKSUM_UDIF_CRC32 0x00000002
+#define CHECKSUM_MD5 0x00000004
 #define CHECKSUM_MKBLOCK 0x0002
 #define CHECKSUM_NONE 0x0000
 
-#define BLOCK_ZLIB 0x80000005
-#define BLOCK_ADC 0x80000004
+#define BLOCK_ZEROES 0x00000000
 #define BLOCK_RAW 0x00000001
 #define BLOCK_IGNORE 0x00000002
+#define BLOCK_ADC 0x80000004
+#define BLOCK_ZLIB 0x80000005
+#define BLOCK_BZIP2 0x80000006
+#define BLOCK_LZFSE 0x80000007
+#define BLOCK_LZMA 0x80000008
 #define BLOCK_COMMENT 0x7FFFFFFE
 #define BLOCK_TERMINATOR 0xFFFFFFFF
 
@@ -35,15 +56,19 @@
 #define PARTITION_SIZE 0x3f
 #define ATAPI_SIZE 0x8
 #define FREE_SIZE 0xa
-#define EXTRA_SIZE (DDM_SIZE + PARTITION_SIZE + ATAPI_SIZE + FREE_SIZE)
+#define EXTRA_SIZE (ATAPI_OFFSET + ATAPI_SIZE + FREE_SIZE)
 
 #define DDM_OFFSET 0x0
 #define PARTITION_OFFSET (DDM_SIZE)
-#define ATAPI_OFFSET (DDM_SIZE + PARTITION_SIZE)
-#define USER_OFFSET (DDM_SIZE + PARTITION_SIZE + ATAPI_SIZE)
+#define ATAPI_OFFSET 64
+#define USER_OFFSET (ATAPI_OFFSET + ATAPI_SIZE)
 
 #define BOOTCODE_DMMY 0x444D4D59
 #define BOOTCODE_GOON 0x676F6F6E
+
+#define bool short
+#define true 1
+#define false 0
 
 enum {
 	kUDIFFlagsFlattened = 1
@@ -56,7 +81,7 @@ enum {
 
 typedef struct {
 	uint32_t type;
-	uint32_t size;
+	uint32_t bitness;
 	uint32_t data[0x20];
 } __attribute__((__packed__)) UDIFChecksum;
 
@@ -217,6 +242,8 @@ typedef struct ResourceData {
 	size_t dataLength;
 	int id;
 	char* name;
+	size_t dataXmlOffset;
+	size_t dataXmlSize;
 	struct ResourceData* next;
 } ResourceData;
 
@@ -229,18 +256,6 @@ typedef struct ResourceKey {
 	struct ResourceKey* next;
 	FlipDataFunc flipData;
 } ResourceKey;
-
-typedef struct {
-    unsigned long state[5];
-    unsigned long count[2];
-    unsigned char buffer[64];
-} SHA1_CTX;
-
-typedef struct {
-	uint32_t block;
-	uint32_t crc;
-	SHA1_CTX sha1;
-} ChecksumToken;
 
 static inline uint32_t readUInt32(AbstractFile* file) {
 	uint32_t data;
@@ -256,7 +271,7 @@ static inline void writeUInt32(AbstractFile* file, uint32_t data) {
 	ASSERT(file->write(file, &data, sizeof(data)) == sizeof(data), "fwrite");
 }
 
-static inline uint32_t readUInt64(AbstractFile* file) {
+static inline uint64_t readUInt64(AbstractFile* file) {
 	uint64_t data;
 	
 	ASSERT(file->read(file, &data, sizeof(data)) == sizeof(data), "fread");
@@ -273,9 +288,9 @@ static inline void writeUInt64(AbstractFile* file, uint64_t data) {
 #ifdef __cplusplus
 extern "C" {
 #endif
-	unsigned char* decodeBase64(char* toDecode, size_t* dataLength);
-	void writeBase64(AbstractFile* file, unsigned char* data, size_t dataLength, int tabLength, int width);
-	char* convertBase64(unsigned char* data, size_t dataLength, int tabLength, int width);
+	void outResources(AbstractFile* file, AbstractFile* out);
+
+	uint32_t checksumBitness(uint32_t type);
 
 	uint32_t CRC32Checksum(uint32_t* crc, const unsigned char *buf, size_t len);
 	uint32_t MKBlockChecksum(uint32_t* ckSum, const unsigned char* data, size_t len);
@@ -284,10 +299,9 @@ extern "C" {
 	void BlockCRC(void* token, const unsigned char* data, size_t len);
 	void CRCProxy(void* token, const unsigned char* data, size_t len);
 
-	void SHA1Transform(unsigned long state[5], const unsigned char buffer[64]);
 	void SHA1Init(SHA1_CTX* context);
-	void SHA1Update(SHA1_CTX* context, const unsigned char* data, unsigned int len);
-	void SHA1Final(unsigned char digest[20], SHA1_CTX* context);
+	void SHA1Update(SHA1_CTX* context, const uint8_t* data, const size_t len);
+	void SHA1Final(uint8_t digest[SHA1_DIGEST_SIZE], SHA1_CTX* context);
 
 	void flipUDIFChecksum(UDIFChecksum* o, char out);
 	void readUDIFChecksum(AbstractFile* file, UDIFChecksum* o);
@@ -297,8 +311,8 @@ extern "C" {
 	void readUDIFResourceFile(AbstractFile* file, UDIFResourceFile* o);
 	void writeUDIFResourceFile(AbstractFile* file, UDIFResourceFile* o);
 
-	ResourceKey* readResources(AbstractFile* file, UDIFResourceFile* resourceFile);
-	void writeResources(AbstractFile* file, ResourceKey* resources);
+	ResourceKey* readResources(char* xml, size_t length, bool plstNameIsAttribution);
+	void writeResources(AbstractFile* file, ResourceKey* resources, bool plstNameIsAttribution);
 	void releaseResources(ResourceKey* resources);
 
 	NSizResource* readNSiz(ResourceKey* resources);
@@ -310,8 +324,8 @@ extern "C" {
 
 	ResourceKey* getResourceByKey(ResourceKey* resources, const char* key);
 	ResourceData* getDataByID(ResourceKey* resource, int id);
-	ResourceKey* insertData(ResourceKey* resources, const char* key, int id, const char* name, const char* data, size_t dataLength, uint32_t attributes);
-	ResourceKey* makePlst();
+	ResourceKey* insertData(ResourceKey* resources, const char* key, int id, const char* name, size_t nameLength, bool nameAsData, const char* data, size_t dataLength, uint32_t attributes);
+	ResourceKey* makePlst(const char* name, size_t nameLength, bool nameAsData);
 	ResourceKey* makeSize(HFSPlusVolumeHeader* volumeHeader);
 
 	void flipDriverDescriptorRecord(DriverDescriptorRecord* record, char out);
@@ -319,24 +333,27 @@ extern "C" {
 	void flipPartitionMultiple(Partition* partition, char multiple, char out, unsigned int BlockSize);
 
 	void readDriverDescriptorMap(AbstractFile* file, ResourceKey* resources);
-	DriverDescriptorRecord* createDriverDescriptorMap(uint32_t numSectors);
-	void writeDriverDescriptorMap(AbstractFile* file, DriverDescriptorRecord* DDM, ChecksumFunc dataForkChecksum, void* dataForkToken, ResourceKey **resources);
+	DriverDescriptorRecord* createDriverDescriptorMap(uint32_t numSectors, unsigned int BlockSize);
+	int writeDriverDescriptorMap(int pNum, AbstractFile* file, DriverDescriptorRecord* DDM, unsigned int BlockSize, ChecksumFunc dataForkChecksum, void* dataForkToken, ResourceKey **resources,
+		Compressor *comp, size_t runSectors);
 	void readApplePartitionMap(AbstractFile* file, ResourceKey* resources, unsigned int BlockSize);
-	Partition* createApplePartitionMap(uint32_t numSectors, const char* volumeType);
-	void writeApplePartitionMap(AbstractFile* file, Partition* partitions, ChecksumFunc dataForkChecksum, void* dataForkToken, ResourceKey **resources, NSizResource** nsizIn);
-	void writeATAPI(AbstractFile* file,  ChecksumFunc dataForkChecksum, void* dataForkToken, ResourceKey **resources, NSizResource** nsizIn);
-	void writeFreePartition(AbstractFile* outFile, uint32_t numSectors, ResourceKey** resources);
+	Partition* createApplePartitionMap(uint32_t numSectors, const char* volumeType, unsigned int BlockSize);
+	int writeApplePartitionMap(int pNum, AbstractFile* file, Partition* partitions, unsigned int BlockSize, ChecksumFunc dataForkChecksum, void* dataForkToken, ResourceKey **resources, NSizResource** nsizIn,
+		Compressor *comp, size_t runSectors);
+	int writeATAPI(int pNum, AbstractFile* file, unsigned int BlockSize, ChecksumFunc dataForkChecksum, void* dataForkToken, ResourceKey **resources, NSizResource** nsizIn,
+		Compressor *comp, size_t runSectors);
+	int writeFreePartition(int pNum, AbstractFile* outFile, uint32_t offset, uint32_t numSectors, ResourceKey** resources);
 
 	void extractBLKX(AbstractFile* in, AbstractFile* out, BLKXTable* blkx);
-	BLKXTable* insertBLKX(AbstractFile* out, AbstractFile* in, uint32_t firstSectorNumber, uint32_t numSectors, uint32_t blocksDescriptor,
-				uint32_t checksumType, ChecksumFunc uncompressedChk, void* uncompressedChkToken, ChecksumFunc compressedChk,
-				void* compressedChkToken, Volume* volume);
+	BLKXTable* insertBLKX(AbstractFile* out, AbstractFile* in, uint32_t firstSectorNumber, off_t bytes, uint32_t blocksDescriptor,
+	            uint32_t checksumType, ChecksumFunc uncompressedChk, void* uncompressedChkToken, ChecksumFunc compressedChk,
+				void* compressedChkToken, Volume* volume, AbstractAttribution* attribution, Compressor* comp, size_t runSectors);
 
 
 	int extractDmg(AbstractFile* abstractIn, AbstractFile* abstractOut, int partNum);
-	int buildDmg(AbstractFile* abstractIn, AbstractFile* abstractOut);
+	int buildDmg(AbstractFile* abstractIn, AbstractFile* abstractOut, unsigned int BlockSize, const char* sentinel, Compressor *comp, size_t runSectors);
 	int convertToISO(AbstractFile* abstractIn, AbstractFile* abstractOut);
-	int convertToDMG(AbstractFile* abstractIn, AbstractFile* abstractOut);
+	int convertToDMG(AbstractFile* abstractIn, AbstractFile* abstractOut, Compressor* comp, size_t runSectors);
 #ifdef __cplusplus
 }
 #endif

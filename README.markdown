@@ -52,6 +52,11 @@ does not have dependencies on the dmg directory.
 
 The makefile in the root folder will make all utilities.
 
+	mkdir build && cd build
+	cmake ..
+	make # Or only make hfs / make dmg / ...
+	sudo make install
+
 ### HFS+
 
 	cd hfs
@@ -69,3 +74,12 @@ The makefile in the root folder will make all utilities.
 	cd hdiutil
 	make
 
+TESTING
+-------
+
+To run tests automatically, ensure you have Docker and docker-buildx installed. Then run `./test/run_tests.sh`.
+
+Or to run tests manually:
+* Configure in 'build': `cmake -B build`
+* Install cram: `pipx install cram`
+* Run tests: `cram test/*.t`

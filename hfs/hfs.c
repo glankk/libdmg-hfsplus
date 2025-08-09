@@ -131,6 +131,16 @@ void cmd_chmod(Volume* volume, int argc, const char *argv[]) {
 	}
 }
 
+void cmd_attr(Volume* volume, int argc, const char *argv[]) {
+	int mode;
+
+	if(argc > 2) {
+		attrFile(argv[1], argv[2], volume);
+	} else {
+		printf("Not enough arguments");
+	}
+}
+
 void cmd_extractall(Volume* volume, int argc, const char *argv[]) {
 	HFSPlusCatalogRecord* record;
 	char cwd[1024];
@@ -226,7 +236,7 @@ void cmd_getattr(Volume* volume, int argc, const char *argv[]) {
 	HFSPlusCatalogRecord* record;
 
 	if(argc < 3) {
-		printf("Not enough arguments");
+		printf("Not enough arguments: getattr <path> <attribute-name>");
 		return;
 	}
 
@@ -252,7 +262,60 @@ void cmd_getattr(Volume* volume, int argc, const char *argv[]) {
 	} else {
 		printf("No such file or directory\n");
 	}
-	
+
+	free(record);
+}
+
+void cmd_setattr(Volume* volume, int argc, const char *argv[]) {
+	HFSPlusCatalogRecord* record;
+
+	if(argc < 4) {
+		printf("Not enough arguments: setattr <path> <attribute-name> <attribute-value>");
+		return;
+	}
+
+	record = getRecordFromPath(argv[1], volume, NULL, NULL);
+
+	if(record != NULL) {
+		HFSCatalogNodeID id;
+		uint8_t* data;
+		size_t size;
+		if(record->recordType == kHFSPlusFileRecord)
+			id = ((HFSPlusCatalogFile*)record)->fileID;
+		else
+			id = ((HFSPlusCatalogFolder*)record)->folderID;
+
+		// Note: this doesn't handle embedded nulls, string encodings, etc.
+		size_t dataLen = strlen(argv[3]);
+		if (dataLen == 0) {
+			// Handle the empty string gracefully.
+			dataLen = 1;
+		}
+		if((dataLen & 0x1) == 0x1) {
+			// HFS record sizes must be even.  Pad the given data with one 0 to
+			// maintain this invariant.  Note that macOS `xattr` appears to do
+			// this silently.
+			dataLen += 1;
+		}
+		data = malloc(sizeof(uint8_t) * (dataLen));
+		memset(data, 0, dataLen);
+		memcpy(data, argv[3], strlen(argv[3]));
+
+		ASSERT(setAttribute(volume, id, argv[2], data, dataLen), "setAttribute");
+	} else {
+		printf("No such file or directory\n");
+	}
+
+	if(record->recordType == kHFSPlusFolderRecord) {
+		((HFSPlusCatalogFolder*)record)->flags |= kHFSHasAttributesMask;
+	} else if(record->recordType == kHFSPlusFileRecord) {
+		((HFSPlusCatalogFile*)record)->flags |= kHFSHasAttributesMask;
+	} else {
+		printf("unknown record type %x\n", record->recordType);
+	}
+
+	updateCatalog(volume, record);
+
 	free(record);
 }
 
@@ -271,7 +334,7 @@ int main(int argc, const char *argv[]) {
 	TestByteOrder();
 	
 	if(argc < 3) {
-		printf("usage: %s <image-file> <ls|cat|mv|mkdir|add|rm|chmod|extract|extractall|rmall|addall|debug> <arguments>\n", argv[0]);
+		printf("usage: %s <image-file> <ls|cat|mv|mkdir|add|rm|chmod|extract|extractall|rmall|addall|attr|debug> <arguments>\n", argv[0]);
 		return 0;
 	}
 	
@@ -305,6 +368,8 @@ int main(int argc, const char *argv[]) {
 			cmd_rm(volume, argc - 2, argv + 2);
 		} else if(strcmp(argv[2], "chmod") == 0) {
 			cmd_chmod(volume, argc - 2, argv + 2);
+		} else if(strcmp(argv[2], "attr") == 0) {
+			cmd_attr(volume, argc - 2, argv + 2);
 		} else if(strcmp(argv[2], "extract") == 0) {
 			cmd_extract(volume, argc - 2, argv + 2);
 		} else if(strcmp(argv[2], "extractall") == 0) {
@@ -317,11 +382,19 @@ int main(int argc, const char *argv[]) {
 			cmd_grow(volume, argc - 2, argv + 2);
 		} else if(strcmp(argv[2], "getattr") == 0) {
 			cmd_getattr(volume, argc - 2, argv + 2);
+		} else if(strcmp(argv[2], "setattr") == 0) {
+			cmd_setattr(volume, argc - 2, argv + 2);
 		} else if(strcmp(argv[2], "debug") == 0) {
 			if(argc > 3 && strcmp(argv[3], "verbose") == 0) {
 				debugBTree(volume->catalogTree, TRUE);
 			} else {
 				debugBTree(volume->catalogTree, FALSE);
+			}
+		} else if(strcmp(argv[2], "debugattrs") == 0) {
+			if(argc > 3 && strcmp(argv[3], "verbose") == 0) {
+				debugBTree(volume->attrTree, TRUE);
+			} else {
+				debugBTree(volume->attrTree, FALSE);
 			}
 		}
 	}

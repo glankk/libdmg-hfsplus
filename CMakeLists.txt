@@ -1,6 +1,7 @@
-cmake_minimum_required(VERSION 2.6)
+cmake_minimum_required(VERSION 3.5)
 
 project (libdmg-hfsplus)
+list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
 # We want win32 executables to build staticly by default, since it's more difficult to keep the shared libraries straight on Windows
 IF(WIN32)

@@ -42,6 +42,10 @@ off_t fileGetLength(AbstractFile* file) {
 	return length;
 }
 
+int fileEOF(AbstractFile* file) {
+	return feof((FILE*) (file->data));
+}
+
 AbstractFile* createAbstractFileFromFile(FILE* file) {
 	AbstractFile* toReturn;
 
@@ -57,6 +61,7 @@ AbstractFile* createAbstractFileFromFile(FILE* file) {
 	toReturn->tell = ftellWrapper;
 	toReturn->getLength = fileGetLength;
 	toReturn->close = fcloseWrapper;
+	toReturn->eof = fileEOF;
 	toReturn->type = AbstractFileTypeFile;
 	return toReturn;
 }
@@ -83,6 +88,10 @@ void dummyClose(AbstractFile* file) {
   free(file);
 }
 
+int dummyEOF(AbstractFile* file) {
+	return 1;
+}
+
 AbstractFile* createAbstractFileFromDummy() {
 	AbstractFile* toReturn;
 	toReturn = (AbstractFile*) malloc(sizeof(AbstractFile));
@@ -93,6 +102,7 @@ AbstractFile* createAbstractFileFromDummy() {
 	toReturn->tell = dummyTell;
 	toReturn->getLength = NULL;
 	toReturn->close = dummyClose;
+	toReturn->eof = dummyEOF;
 	toReturn->type = AbstractFileTypeDummy;
 	return toReturn;
 }
@@ -141,6 +151,11 @@ void memClose(AbstractFile* file) {
   free(file);
 }
 
+int memEOF(AbstractFile* file) {
+  MemWrapperInfo* info = (MemWrapperInfo*) (file->data);
+	return info->offset >= info->bufferSize;
+}
+
 AbstractFile* createAbstractFileFromMemory(void** buffer, size_t size) {
 	MemWrapperInfo* info;
 	AbstractFile* toReturn;
@@ -158,6 +173,7 @@ AbstractFile* createAbstractFileFromMemory(void** buffer, size_t size) {
 	toReturn->tell = memTell;
 	toReturn->getLength = memGetLength;
 	toReturn->close = memClose;
+	toReturn->eof = memEOF;
 	toReturn->type = AbstractFileTypeMem;
 	return toReturn;
 }
@@ -232,6 +248,7 @@ size_t memFileWrite(AbstractFile* file, const void* data, size_t len) {
   }
   
   if((info->offset + (size_t)len) > (*(info->bufferSize))) {
+		memset(((uint8_t*)(*(info->buffer))) + *(info->bufferSize), 0, (info->offset + (size_t)len) - *(info->bufferSize));
 		*(info->bufferSize) = info->offset + (size_t)len;
 	}
       
@@ -261,6 +278,11 @@ void memFileClose(AbstractFile* file) {
   free(file);
 }
 
+int memFileEOF(AbstractFile* file) {
+	MemFileWrapperInfo* info = (MemFileWrapperInfo*) (file->data);
+	return info->offset >= info->actualBufferSize;
+}
+
 AbstractFile* createAbstractFileFromMemoryFile(void** buffer, size_t* size) {
 	MemFileWrapperInfo* info;
 	AbstractFile* toReturn;
@@ -282,6 +304,7 @@ AbstractFile* createAbstractFileFromMemoryFile(void** buffer, size_t* size) {
 	toReturn->tell = memFileTell;
 	toReturn->getLength = memFileGetLength;
 	toReturn->close = memFileClose;
+	toReturn->eof = memFileEOF;
 	toReturn->type = AbstractFileTypeMemFile;
 	return toReturn;
 }
@@ -308,3 +331,133 @@ AbstractFile* createAbstractFileFromMemoryFileBuffer(void** buffer, size_t* size
 	return toReturn;
 }
 
+#define PIPE_BUFFER_SIZE (1024 * 1024)
+
+typedef struct {
+	off_t pos;
+
+	FILE* file;
+	off_t filePos;
+
+	// Keep the first N bytes of the file in memory, since we like parsing headers
+	char *buffer;
+	size_t bufferSize;
+} PipeWrapperInfo;
+
+static size_t pipeRead(AbstractFile* file, void* data, size_t len) {
+	PipeWrapperInfo* info = (PipeWrapperInfo*) (file->data);
+	size_t ret = 0;
+
+	// if positioned in the buffer, read from it
+	if (info->pos < info->bufferSize) {
+		size_t bufAvail = info->bufferSize - info->pos;
+		size_t bufBytes = len > bufAvail ? bufAvail : len;
+		memcpy(data, info->buffer + info->pos, bufBytes);
+		data += bufBytes;
+		info->pos += bufBytes;
+		len -= bufBytes;
+		ret += bufBytes;
+		if (len == 0)
+			return bufBytes;
+	}
+
+	// if we backed into the header, and didn't reach current pos, we're stuck!
+	if (info->pos != info->filePos) {
+		fprintf(stderr, "can't generally seek backward in pipe\n");
+		return 0;
+	}
+
+	size_t read = fread(data, 1, len, info->file);
+	info->pos += read;
+	info->filePos += read;
+	ret += read;
+
+	return ret;
+}
+
+static size_t pipeWrite(AbstractFile* file, const void* data, size_t len) {
+  return -1;
+}
+
+static int pipeSeek(AbstractFile* file, off_t offset) {
+	PipeWrapperInfo* info = (PipeWrapperInfo*) (file->data);
+
+	// seek into our buffer if possible
+	if (offset < info->bufferSize) {
+		info->pos = offset;
+		return 0;
+	}
+	
+	// seek forward can be done by reading
+	if (info->filePos <= offset) {
+		char buf[4096];
+		off_t remain = offset - info->filePos;
+		while (remain > 0) {
+			size_t bytes = remain > 4096 ? 4096 : remain;
+			ASSERT(fread(buf, 1, bytes, info->file) == bytes, "read");
+			info->filePos += bytes;
+		}
+		info->pos = info->filePos;
+		return 0;
+	}
+
+	fprintf(stderr, "Bad seek from %#0jx to %#0jx\n", (intmax_t)info->pos, (intmax_t)offset);
+	return -1;
+}
+
+static off_t pipeTell(AbstractFile* file) {
+	PipeWrapperInfo* info = (PipeWrapperInfo*) (file->data);
+	return info->pos;
+}
+
+static void pipeClose(AbstractFile* file) {
+	PipeWrapperInfo* info = (PipeWrapperInfo*) (file->data);
+	fclose(info->file);
+	free(info->buffer);
+	free(info);
+	free(file);
+}
+
+static off_t pipeGetLength(AbstractFile* file) {
+	return FILE_SIZE_UNKNOWN;
+}
+
+static int pipeEOF(AbstractFile* file) {
+	PipeWrapperInfo* info = (PipeWrapperInfo*) (file->data);
+	return (info->pos >= info->bufferSize) && feof(info->file);
+}
+
+AbstractFile* createAbstractFileFromPipe(FILE* file) {
+	AbstractFile* toReturn;
+	PipeWrapperInfo *info;
+	size_t bytesRead;
+
+	if(file == NULL) {
+		return NULL;
+	}
+
+	info = (PipeWrapperInfo*) malloc(sizeof(PipeWrapperInfo));
+	info->pos = 0;
+	info->file = file;
+	info->filePos = 0;
+	info->bufferSize = PIPE_BUFFER_SIZE;
+	info->buffer = malloc(info->bufferSize);
+
+	bytesRead = fread(info->buffer, 1, info->bufferSize, file);
+	info->filePos += bytesRead;
+	if (bytesRead < info->bufferSize) {
+		info->bufferSize = bytesRead;
+	}
+
+	toReturn = (AbstractFile*) malloc(sizeof(AbstractFile));
+	toReturn->data = info;
+	toReturn->read = pipeRead;
+	toReturn->write = pipeWrite;
+	toReturn->seek = pipeSeek;
+	toReturn->tell = pipeTell;
+	toReturn->getLength = pipeGetLength;
+	toReturn->close = pipeClose;
+	toReturn->eof = pipeEOF;
+	toReturn->type = AbstractFileTypePipe;
+	return toReturn;
+}

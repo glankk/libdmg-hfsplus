@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <getopt.h>
 
 #include <dmg/dmg.h>
 #include <dmg/filevault.h>
@@ -15,14 +16,20 @@ void TestByteOrder()
 	endianness = byte[0] ? IS_LITTLE_ENDIAN : IS_BIG_ENDIAN;
 }
 
+static AbstractFile* buildIn(const char* arg) {
+	if (strcmp(arg, "-") == 0)
+		return createAbstractFileFromPipe(stdin);
+	return createAbstractFileFromFile(fopen(arg, "rb"));
+}
+
 int buildInOut(const char* source, const char* dest, AbstractFile** in, AbstractFile** out) {
-	*in = createAbstractFileFromFile(fopen(source, "rb"));
+	*in = buildIn(source);
 	if(!(*in)) {
 		printf("cannot open source: %s\n", source);
 		return FALSE;
 	}
 
-	*out = createAbstractFileFromFile(fopen(dest, "wb"));
+	*out = createAbstractFileFromFile(strcmp(dest, "-") == 0 ? stdout : fopen(dest, "wb"));
 	if(!(*out)) {
 		(*in)->close(*in);
 		printf("cannot open destination: %s\n", dest);
@@ -32,52 +39,110 @@ int buildInOut(const char* source, const char* dest, AbstractFile** in, Abstract
 	return TRUE;
 }
 
+void usage(const char *name) {
+	printf("usage: %s [OPTIONS] [extract|build|build2048|res|iso|dmg|attribute] <in> <out> (partition)\n", name);
+	printf("OPTIONS:\n");
+	printf("\t--key, -k           key\n");
+	printf("\t--compression, -c   compressor name (%s)\n", compressionNames());
+	printf("\t--level, -l         compression level\n");
+	printf("\t--run-sectors, -r   run size (in sectors)\n");
+	exit(2);
+}
+
 int main(int argc, char* argv[]) {
 	int partNum;
 	AbstractFile* in;
 	AbstractFile* out;
-	int hasKey;
-	
+	int opt;
+	char *cmd, *infile, *outfile;
+	char *key = NULL;
+	Compressor comp = {.level = COMPRESSION_LEVEL_DEFAULT };
+	int ret;
+	int runSectors = DEFAULT_SECTORS_AT_A_TIME;
+
 	TestByteOrder();
-	
-	if(argc < 4) {
-		printf("usage: %s [extract|build|iso|dmg] <in> <out> (-k <key>) (partition)\n", argv[0]);
-		return 0;
-	}
+	initDefaultCompressor(&comp);
 
-	if(!buildInOut(argv[2], argv[3], &in, &out)) {
-		return FALSE;
-	}
+	const char *optstring = "k:c:l:r:";
+	const struct option longopts[] = {
+		{"key", required_argument, NULL, 'k'},
+		{"compression", required_argument, NULL, 'c'},
+		{"level", required_argument, NULL, 'l'},
+		{"run-sectors", required_argument, NULL, 'r'},
+		{NULL, 0, NULL, 0},
+	};
 
-	hasKey = FALSE;
-	if(argc > 5) {
-		if(strcmp(argv[4], "-k") == 0) {
-			in = createAbstractFileFromFileVault(in, argv[5]);
-			hasKey = TRUE;
+	while ((opt = getopt_long(argc, argv, optstring, longopts, NULL)) != -1) {
+		switch (opt) {
+			case 'k':
+				key = optarg;
+				break;
+			case 'c':
+				ret = getCompressor(&comp, optarg);
+				if (ret != 0) {
+					fprintf(stderr, "Unknown compressor \"%s\"\nAllowed options are: %s\n", optarg, compressionNames());
+					return 2;
+				}
+				break;
+			case 'l':
+				sscanf(optarg, "%d", &comp.level);
+				break;
+			case 'r':
+				sscanf(optarg, "%d", &runSectors);
+				if (runSectors < DEFAULT_SECTORS_AT_A_TIME) {
+					fprintf(stderr, "Run size must be at least %d sectors\n", DEFAULT_SECTORS_AT_A_TIME);
+					return 2;
+				}
+				break;
+			default:
+				usage(argv[0]);
 		}
 	}
-	
 
-	if(strcmp(argv[1], "extract") == 0) {
+	if (argc < optind + 3) {
+		usage(argv[0]);
+	}
+	cmd = argv[optind++];
+	infile = argv[optind++];
+	outfile = argv[optind++];
+
+	if(!buildInOut(infile, outfile, &in, &out)) {
+		return -1;
+	}
+	if(key != NULL) {
+		in = createAbstractFileFromFileVault(in, key);
+	}
+
+	if(strcmp(cmd, "extract") == 0) {
 		partNum = -1;
-		
-		if(hasKey) {
-			if(argc > 6) {
-				sscanf(argv[6], "%d", &partNum);
-			}
-		} else {
-			if(argc > 4) {
-				sscanf(argv[4], "%d", &partNum);
-			}
+		if (optind < argc) {
+				sscanf(argv[optind++], "%d", &partNum);
 		}
 		extractDmg(in, out, partNum);
-	} else if(strcmp(argv[1], "build") == 0) {
-		buildDmg(in, out);
-	} else if(strcmp(argv[1], "iso") == 0) {
+	} else if(strcmp(cmd, "build") == 0) {
+		char *anchor = NULL;
+		if (optind < argc) {
+			anchor = argv[optind++];
+		}
+		buildDmg(in, out, SECTOR_SIZE, anchor, &comp, runSectors);
+	} else if(strcmp(cmd, "build2048") == 0) {
+		buildDmg(in, out, 2048, NULL, &comp, runSectors);
+	} else if(strcmp(cmd, "res") == 0) {
+		outResources(in, out);
+	} else if(strcmp(cmd, "iso") == 0) {
 		convertToISO(in, out);
-	} else if(strcmp(argv[1], "dmg") == 0) {
-		convertToDMG(in, out);
+	} else if(strcmp(cmd, "dmg") == 0) {
+		convertToDMG(in, out, &comp, runSectors);
+	} else if(strcmp(cmd, "attribute") == 0) {
+		char *anchor, *data;
+		if(argc < optind + 2) {
+			printf("Not enough arguments: attribute <in> <out> <sentinel> <string>");
+			return 2;
+		}
+		anchor = argv[optind++];
+		data = argv[optind++];
+		updateAttribution(in, out, anchor, data, strlen(data));
 	}
-	
+
 	return 0;
 }

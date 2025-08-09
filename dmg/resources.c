@@ -95,7 +95,7 @@ static char plstData[1032] = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
-const char* plistHeader = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple Computer//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n";
+const char* plistHeader = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n";
 const char* plistFooter = "</dict>\n</plist>\n";
 
 static void flipSizeResource(unsigned char* data, char out) {
@@ -103,26 +103,43 @@ static void flipSizeResource(unsigned char* data, char out) {
   
   size = (SizeResource*) data;
   
-  FLIPENDIAN(size->version);
-  FLIPENDIAN(size->isHFS);
-  FLIPENDIAN(size->unknown2);
-  FLIPENDIAN(size->unknown3);
-  FLIPENDIAN(size->volumeModified);
-  FLIPENDIAN(size->unknown4);
-  FLIPENDIAN(size->volumeSignature);
-  FLIPENDIAN(size->sizePresent);
+  FLIPENDIANLE(size->version);
+  FLIPENDIANLE(size->isHFS);
+  FLIPENDIANLE(size->unknown2);
+  FLIPENDIANLE(size->unknown3);
+  FLIPENDIANLE(size->volumeModified);
+  FLIPENDIANLE(size->unknown4);
+  FLIPENDIANLE(size->volumeSignature);
+  FLIPENDIANLE(size->sizePresent);
 }
 
 static void flipCSumResource(unsigned char* data, char out) {
   CSumResource* cSum;
-  
   cSum = (CSumResource*) data;
   
-  FLIPENDIAN(cSum->version);
-  FLIPENDIAN(cSum->type);
-  FLIPENDIAN(cSum->checksum);
+  FLIPENDIANLE(cSum->version);
+  FLIPENDIANLE(cSum->type);
+  FLIPENDIANLE(cSum->checksum);
 }
 
+static void flipAttributionResource(unsigned char* data, char out) {
+  AttributionResource* attribution;
+  attribution = (AttributionResource*) data;
+
+  FLIPENDIANLE(attribution->signature);
+  FLIPENDIANLE(attribution->version);
+  FLIPENDIANLE(attribution->rawPos);
+  FLIPENDIANLE(attribution->rawLength);
+  FLIPENDIANLE(attribution->rawChecksum);
+  FLIPENDIANLE(attribution->beforeCompressedChecksum);
+  FLIPENDIANLE(attribution->beforeCompressedLength);
+  FLIPENDIANLE(attribution->beforeUncompressedChecksum);
+  FLIPENDIANLE(attribution->beforeUncompressedLength);
+  FLIPENDIANLE(attribution->afterCompressedChecksum);
+  FLIPENDIANLE(attribution->afterCompressedLength);
+  FLIPENDIANLE(attribution->afterUncompressedChecksum);
+  FLIPENDIANLE(attribution->afterUncompressedLength);
+}
 
 static void flipBLKXRun(BLKXRun* data) {
   BLKXRun* run;
@@ -170,17 +187,22 @@ static void flipBLKX(unsigned char* data, char out) {
     FLIPENDIAN(blkx->blocksRunCount);
     for(i = 0; i < blkx->blocksRunCount; i++) {
       flipBLKXRun(&(blkx->runs[i]));
-    }
-    
-    /*printf("fUDIFBlocksSignature: 0x%x\n", blkx->fUDIFBlocksSignature);
+    } 
+  }
+/*
+    printf("fUDIFBlocksSignature: 0x%x\n", blkx->fUDIFBlocksSignature);
     printf("infoVersion: 0x%x\n", blkx->infoVersion);
     printf("firstSectorNumber: 0x%llx\n", blkx->firstSectorNumber);
     printf("sectorCount: 0x%llx\n", blkx->sectorCount);
     printf("dataStart: 0x%llx\n", blkx->dataStart);
     printf("decompressBufferRequested: 0x%x\n", blkx->decompressBufferRequested);
     printf("blocksDescriptor: 0x%x\n", blkx->blocksDescriptor);
-    printf("blocksRunCount: 0x%x\n", blkx->blocksRunCount);*/
-  }
+    printf("blocksRunCount: 0x%x\n", blkx->blocksRunCount);
+
+    for(i = 0; i < 0x20; i++)
+    {
+	    printf("checksum[%d]: %x\n", i, blkx->checksum.data[i]);
+    }*/
 }
 
 static char* getXMLString(char** location) {
@@ -242,7 +264,7 @@ static uint32_t getXMLInteger(char** location) {
   return toReturn;
 }
 
-static unsigned char* getXMLData(char** location, size_t *dataLength) {
+static unsigned char* getXMLData(char** location, size_t *dataLength, char** encodedStart, size_t* encodedLength) {
   char* curLoc;
   char* tagEnd;
   char* encodedData;
@@ -255,11 +277,17 @@ static unsigned char* getXMLData(char** location, size_t *dataLength) {
   if(!curLoc)
     return NULL;
   curLoc += sizeof("<data>") - 1;
+    
+    if (encodedStart)
+        *encodedStart = curLoc;
   
   tagEnd = strstr(curLoc, "</data>");
   
   
   strLen = (size_t)(tagEnd - curLoc);
+    
+    if (encodedLength)
+        *encodedLength = strLen;
   
   encodedData = (char*) malloc(strLen + 1);
   memcpy(encodedData, curLoc, strLen);
@@ -276,13 +304,54 @@ static unsigned char* getXMLData(char** location, size_t *dataLength) {
   return toReturn;
 }
 
-static void readResourceData(ResourceData* data, char** location, FlipDataFunc flipData) {
+static unsigned char* getXMLPlstName(char** location, size_t *dataLength, char** encodedStart, size_t* encodedLength) {
+  char* curLoc;
+  char* tagEnd;
+  char* encodedData;
+  unsigned char* toReturn;
+  size_t strLen;
+
+  curLoc = *location;
+
+  curLoc = strstr(curLoc, "<string>");
+  if(!curLoc)
+    return NULL;
+  curLoc += sizeof("<string>") - 1;
+
+    if (encodedStart)
+        *encodedStart = curLoc;
+
+  tagEnd = strstr(curLoc, "</string>");
+
+
+  strLen = (size_t)(tagEnd - curLoc);
+
+    if (encodedLength)
+        *encodedLength = strLen;
+
+  encodedData = (char*) malloc(strLen + 1);
+  memcpy(encodedData, curLoc, strLen);
+  encodedData[strLen] = '\0';
+
+  curLoc = tagEnd + sizeof("</string>") - 1;
+
+  *location = curLoc;
+
+  toReturn = decodeBase64(encodedData, dataLength);
+
+  free(encodedData);
+
+  return toReturn;
+}
+
+static void readResourceData(ResourceData* data, char** location, char* xmlStart, FlipDataFunc flipData, const unsigned char* key, bool plstNameIsAttribution) {
   char* curLoc;
   char* tagBegin;
   char* tagEnd;
   char* dictEnd;
   size_t strLen;
   char* buffer;
+  char* encodedStart;
   
   curLoc = *location;
   
@@ -310,7 +379,9 @@ static void readResourceData(ResourceData* data, char** location, FlipDataFunc f
       sscanf(buffer, "0x%x", &(data->attributes));
       free(buffer);
     } else if(strncmp(tagBegin, "Data", strLen) == 0) {
-      data->data = getXMLData(&curLoc, &(data->dataLength));
+        encodedStart = 0;
+      data->data = getXMLData(&curLoc, &(data->dataLength), &encodedStart, &data->dataXmlSize);
+      data->dataXmlOffset = encodedStart - xmlStart;
       if(flipData) {
         (*flipData)(data->data, 0);
       }
@@ -319,7 +390,16 @@ static void readResourceData(ResourceData* data, char** location, FlipDataFunc f
       sscanf(buffer, "%d", &(data->id));
       free(buffer);
     } else if(strncmp(tagBegin, "Name", strLen) == 0) {
-      data->name = getXMLString(&curLoc);
+      if (strcmp((char*) key, "plst") == 0 && plstNameIsAttribution) {
+	char *nameEncodedStart;
+	size_t nameXmlSize;
+	size_t nameLength;
+	unsigned char* attributionFromName = getXMLPlstName(&curLoc, &nameLength, &nameEncodedStart, &nameXmlSize);
+	data->name = attributionFromName;
+	flipAttributionResource(data->name, 0);
+      } else {
+	data->name = getXMLString(&curLoc);
+      }
     }
   }
   
@@ -362,7 +442,7 @@ static void readNSizResource(NSizResource* data, char** location) {
     curLoc = tagEnd + sizeof("</key>") - 1;
     
     if(strncmp(tagBegin, "SHA-1-digest", strLen) == 0) {
-      data->sha1Digest = getXMLData(&curLoc, &dummy);;
+      data->sha1Digest = getXMLData(&curLoc, &dummy, 0, 0);
       /*flipEndian(data->sha1Digest, 4);*/
     } else if(strncmp(tagBegin, "block-checksum-2", strLen) == 0) {
       data->blockChecksum2 = getXMLInteger(&curLoc);
@@ -412,7 +492,7 @@ static void writeNSizResource(NSizResource* data, char* buffer) {
   sprintf(itemBuffer, "\t<key>version</key>\n\t<integer>%d</integer>\n", (int32_t)(data->version));
   strcat(buffer, itemBuffer);
   if(data->isVolume) {
-    sprintf(itemBuffer, "\t<key>bytes</key>\n\t<integer>%d</integer>\n", (int32_t)(data->volumeSignature));
+    sprintf(itemBuffer, "\t<key>volume-signature</key>\n\t<integer>%d</integer>\n", (int32_t)(data->volumeSignature));
     strcat(buffer, itemBuffer);
   }
   strcat(buffer, plistFooter);
@@ -521,8 +601,25 @@ void releaseNSiz(NSizResource* nSiz) {
   }
 }
 
-ResourceKey* readResources(AbstractFile* file, UDIFResourceFile* resourceFile) {
-  char* xml;
+void outResources(AbstractFile* file, AbstractFile* out)
+{
+	char* xml;
+	UDIFResourceFile resourceFile;
+	off_t fileLength;
+
+	fileLength = file->getLength(file);
+	file->seek(file, fileLength - sizeof(UDIFResourceFile));
+	readUDIFResourceFile(file, &resourceFile);
+	xml = (char*) malloc((size_t)resourceFile.fUDIFXMLLength);
+	file->seek(file, (off_t)(resourceFile.fUDIFXMLOffset));
+	ASSERT(file->read(file, xml, (size_t)resourceFile.fUDIFXMLLength) == (size_t)resourceFile.fUDIFXMLLength, "fread");
+	ASSERT(out->write(out, xml, (size_t)resourceFile.fUDIFXMLLength) == (size_t)resourceFile.fUDIFXMLLength, "fwrite");
+
+	file->close(file);
+	out->close(out);
+}
+
+ResourceKey* readResources(char* xml, size_t length, bool plstNameIsAttribution) {
   char* curLoc;
   char* tagEnd;
   size_t strLen;
@@ -531,9 +628,6 @@ ResourceKey* readResources(AbstractFile* file, UDIFResourceFile* resourceFile) {
   ResourceKey* curResource;
   ResourceData* curData;
   
-  xml = (char*) malloc((size_t)resourceFile->fUDIFXMLLength + 1); /* we're not going to handle over 32-bit resource files, that'd be insane */
-  xml[(size_t)resourceFile->fUDIFXMLLength] = '\0';
-
   if(!xml)
     return NULL;
 
@@ -541,9 +635,6 @@ ResourceKey* readResources(AbstractFile* file, UDIFResourceFile* resourceFile) {
   curResource = NULL;
   curData = NULL;
   
-  file->seek(file, (off_t)(resourceFile->fUDIFXMLOffset));
-  ASSERT(file->read(file, xml, (size_t)resourceFile->fUDIFXMLLength) == (size_t)resourceFile->fUDIFXMLLength, "fread");
-
   curLoc = strstr(xml, "<key>resource-fork</key>");
   if(!curLoc)
     return NULL;
@@ -612,19 +703,17 @@ ResourceKey* readResources(AbstractFile* file, UDIFResourceFile* resourceFile) {
       
       curData->next = NULL;
       
-      readResourceData(curData, &curLoc, curResource->flipData);
+      readResourceData(curData, &curLoc, xml, curResource->flipData, curResource->key, plstNameIsAttribution);
       curLoc = strstr(curLoc, "<dict>");
     }
        
     curLoc = tagEnd + sizeof("</array>") - 1;
   }
   
-  free(xml);
-  
   return toReturn;
 }
 
-static void writeResourceData(AbstractFile* file, ResourceData* data, FlipDataFunc flipData, int tabLength) {
+static void writeResourceData(AbstractFile* file, ResourceData* data, ResourceKey* curResource, FlipDataFunc flipData, int tabLength, bool plstNameIsAttribution) {
   unsigned char* dataBuf;
   char* tabs;
   int i;
@@ -637,6 +726,10 @@ static void writeResourceData(AbstractFile* file, ResourceData* data, FlipDataFu
   
   abstractFilePrint(file, "%s<dict>\n", tabs);
   abstractFilePrint(file, "%s\t<key>Attributes</key>\n%s\t<string>0x%04x</string>\n", tabs, tabs, data->attributes);
+
+  if(strcmp((char*) curResource->key, "blkx") == 0)
+    abstractFilePrint(file, "%s\t<key>CFName</key>\n%s\t<string>%s</string>\n", tabs, tabs, data->name);
+
   abstractFilePrint(file, "%s\t<key>Data</key>\n%s\t<data>\n", tabs, tabs);
   
   if(flipData) {
@@ -651,13 +744,23 @@ static void writeResourceData(AbstractFile* file, ResourceData* data, FlipDataFu
   
   abstractFilePrint(file, "%s\t</data>\n", tabs);
   abstractFilePrint(file, "%s\t<key>ID</key>\n%s\t<string>%d</string>\n", tabs, tabs, data->id);
-  abstractFilePrint(file, "%s\t<key>Name</key>\n%s\t<string>%s</string>\n", tabs, tabs, data->name);
+  if (strcmp((char*) curResource->key, "plst") == 0 && plstNameIsAttribution) {
+    unsigned char* nameBuf = (unsigned char*) malloc(sizeof(AttributionResource));
+    memcpy(nameBuf, data->name, sizeof(AttributionResource));
+      flipAttributionResource(nameBuf, 1);
+    abstractFilePrint(file, "%s\t<key>Name</key>\n%s\t<string>\n", tabs, tabs);
+    writeBase64(file, nameBuf, sizeof(AttributionResource), tabLength + 1, 43);
+    abstractFilePrint(file, "%s\t</string>\n", tabs);
+  }
+  else {
+    abstractFilePrint(file, "%s\t<key>Name</key>\n%s\t<string>%s</string>\n", tabs, tabs, data->name);
+  }
   abstractFilePrint(file, "%s</dict>\n", tabs);
   
   free(tabs);
 }
 
-void writeResources(AbstractFile* file, ResourceKey* resources) {
+void writeResources(AbstractFile* file, ResourceKey* resources, bool plstNameIsAttribution) {
   ResourceKey* curResource;
   ResourceData* curData;
   
@@ -669,8 +772,8 @@ void writeResources(AbstractFile* file, ResourceKey* resources) {
     abstractFilePrint(file, "\t\t<key>%s</key>\n\t\t<array>\n", curResource->key);
     curData = curResource->data;
     while(curData != NULL) {
-      writeResourceData(file, curData, curResource->flipData, 3);
-      curData = curData->next;
+	    writeResourceData(file, curData, curResource, curResource->flipData, 3, plstNameIsAttribution);
+	    curData = curData->next;
     }
     abstractFilePrint(file, "\t\t</array>\n", curResource->key);
     curResource = curResource->next;
@@ -743,11 +846,11 @@ ResourceData* getDataByID(ResourceKey* resource, int id) {
   return NULL;
 }
 
-ResourceKey* insertData(ResourceKey* resources, const char* key, int id, const char* name, const char* data, size_t dataLength, uint32_t attributes) {
+ResourceKey* insertData(ResourceKey* resources, const char* key, int id, const char* name, size_t nameLength, bool nameAsData, const char* data, size_t dataLength, uint32_t attributes) {
   ResourceKey* curResource;
   ResourceKey* lastResource;
   ResourceData* curData;
-  
+
   lastResource = resources;
   curResource = resources;
   while(curResource != NULL) {
@@ -810,8 +913,14 @@ ResourceKey* insertData(ResourceKey* resources, const char* key, int id, const c
   curData->attributes = attributes;
   curData->dataLength = dataLength;
   curData->id = id;
-  curData->name = (char*) malloc(strlen(name) + 1);
-  strcpy((char*) curData->name, name);
+  if (nameAsData) {
+    curData->name = (unsigned char*) malloc(nameLength);
+    memcpy(curData->name, name, nameLength);
+  }
+  else {
+    curData->name = (char*) malloc(strlen(name) + 1);
+    strcpy((char*) curData->name, name);
+  }
   curData->data = (unsigned char*) malloc(dataLength);
   memcpy(curData->data, data, dataLength);
   
@@ -828,8 +937,8 @@ ResourceKey* insertData(ResourceKey* resources, const char* key, int id, const c
   }
 }
 
-ResourceKey* makePlst() {
-  return insertData(NULL, "plst", 0, "", plstData, sizeof(plstData), ATTRIBUTE_HDIUTIL); 
+ResourceKey* makePlst(const char* name, size_t nameLength, bool nameAsData) {
+  return insertData(NULL, "plst", 0, name, nameLength, nameAsData, plstData, sizeof(plstData), ATTRIBUTE_HDIUTIL);
 }
 
 ResourceKey* makeSize(HFSPlusVolumeHeader* volumeHeader) {
@@ -837,6 +946,7 @@ ResourceKey* makeSize(HFSPlusVolumeHeader* volumeHeader) {
   memset(&size, 0, sizeof(SizeResource));
   size.version = 5;
   size.isHFS = 1;
+  size.unknown1 = 0;
   size.unknown2 = 0;
   size.unknown3 = 0;
   size.volumeModified = volumeHeader->modifyDate;
@@ -845,6 +955,6 @@ ResourceKey* makeSize(HFSPlusVolumeHeader* volumeHeader) {
   size.sizePresent = 1;
 
   printf("making size data\n");  
-  return insertData(NULL, "size", 0, "", (const char*)(&size), sizeof(SizeResource), 0); 
+  return insertData(NULL, "size", 2, "", 0, false, (const char*)(&size), sizeof(SizeResource), 0);
 }
 

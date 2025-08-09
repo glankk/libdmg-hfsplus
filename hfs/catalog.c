@@ -565,8 +565,11 @@ HFSPlusCatalogRecord* getRecordFromPath3(const char* path, Volume* volume, char 
       continue;
     }
 
-    ASCIIToUnicode(word, &key.nodeName);
-    
+    if(strcmp(word, "..") == 0) {
+      key.nodeName.length = 0;
+    } else {
+      ASCIIToUnicode(word, &key.nodeName);
+    }
     key.keyLength = sizeof(key.parentID) + sizeof(key.nodeName.length) + (sizeof(uint16_t) * key.nodeName.length);
     record = (HFSPlusCatalogRecord*) search(volume->catalogTree, (BTKey*)(&key), &exact, NULL, NULL);
 
@@ -587,28 +590,38 @@ HFSPlusCatalogRecord* getRecordFromPath3(const char* path, Volume* volume, char 
         }
       }
     }
-	
-    if(record->recordType == kHFSPlusFileRecord) {	
-	if((word + strlen(word) + 1) >= pathLimit) {
-		free(origPath);
-      
-		if(retKey != NULL) {
-			memcpy(retKey, &key, sizeof(HFSPlusCatalogKey));
-		}
-      
-		return record;
-	} else {
-		free(origPath);
-		free(record);
-		return NULL;
-	}
+
+    if(record->recordType == kHFSPlusFileRecord) {
+      if((word + strlen(word) + 1) >= pathLimit) {
+        free(origPath);
+
+        if(retKey != NULL) {
+          memcpy(retKey, &key, sizeof(HFSPlusCatalogKey));
+        }
+
+        return record;
+      } else {
+        free(origPath);
+        free(record);
+        return NULL;
+      }
     }
-    
+
+    if(record->recordType == kHFSPlusFolderThreadRecord) {
+      key.parentID = ((HFSPlusCatalogThread*)record)->parentID;
+      continue;
+    }
+
     if(record->recordType != kHFSPlusFolderRecord)
       hfs_panic("inconsistent catalog tree!");
     
     realParent = key.parentID;
     key.parentID = ((HFSPlusCatalogFolder*)record)->folderID;
+  }
+
+  if(record->recordType == kHFSPlusFolderThreadRecord) {
+    free(record);
+    record = getRecordByCNID(key.parentID, volume);
   }
   
   if(retKey != NULL) {
@@ -800,7 +813,7 @@ int removeFile(const char* fileName, Volume* volume) {
 	HFSPlusCatalogRecord* record;
 	HFSPlusCatalogKey key;
 	io_func* io;
-	HFSPlusCatalogFolder* parentFolder;
+	HFSPlusCatalogFolder* parentFolder = NULL;
 
 	record = getRecordFromPath3(fileName, volume, NULL, &key, TRUE, FALSE, kHFSRootFolderID);
 	if(record != NULL) {
@@ -821,7 +834,7 @@ int removeFile(const char* fileName, Volume* volume) {
 			allocate((RawFile*)io->data, 0);
 			CLOSE(io);
 			
-            io = openRawFile(((HFSPlusCatalogFile*)record)->fileID, &((HFSPlusCatalogFile*)record)->resourceFork, record, volume);
+			io = openRawFile(((HFSPlusCatalogFile*)record)->fileID, &((HFSPlusCatalogFile*)record)->resourceFork, record, volume);
 			allocate((RawFile*)io->data, 0);
 			CLOSE(io);
 
@@ -1130,6 +1143,116 @@ int chmodFile(const char* pathName, int mode, Volume* volume) {
   
   free(record);
   
+  return TRUE;
+}
+
+int attrFile(const char* pathName, const char* flags, Volume* volume) {
+  HFSPlusCatalogRecord* record;
+  uint16_t flag = 0;
+  uint16_t mask = 0;
+  uint16_t file_mask = kIsOnDesk|kColor|kIsShared|kHasNoINITs|kHasBeenInited|kHasCustomIcon|kIsStationery|kNameLocked|kHasBundle|kIsInvisible|kIsAlias;
+  uint16_t folder_mask = kIsOnDesk|kColor|kHasCustomIcon|kNameLocked|kIsInvisible;
+
+  while (*flags != 0) {
+    switch(*flags++) {
+    // custom icon
+    case 'C':
+      flag |= kHasCustomIcon;
+    case 'c':
+      mask |= kHasCustomIcon;
+      break;
+
+    // invisible
+    case 'V':
+      flag |= kIsInvisible;
+    case 'v':
+      mask |= kIsInvisible;
+      break;
+
+    // inited
+    case 'I':
+      flag |= kHasBeenInited;
+    case 'i':
+      mask |= kHasBeenInited;
+      break;
+
+    // no INIT resource
+    case 'N':
+      flag |= kHasNoINITs;
+    case 'n':
+      mask |= kHasNoINITs;
+      break;
+
+    // located on the desktop
+    case 'D':
+      flag |= kIsOnDesk;
+    case 'd':
+      mask |= kIsOnDesk;
+      break;
+
+    // name locked
+    case 'S':
+      flag |= kNameLocked;
+    case 's':
+      mask |= kNameLocked;
+      break;
+
+    // stationery pad file
+    case 'T':
+      flag |= kIsStationery;
+    case 't':
+      mask |= kIsStationery;
+      break;
+
+    // shared
+    case 'M':
+      flag |= kIsShared;
+    case 'm':
+      mask |= kIsShared;
+      break;
+
+    // alias file
+    case 'A':
+      flag |= kIsAlias;
+    case 'a':
+      mask |= kIsAlias;
+      break;
+
+    // has bundle
+    case 'B':
+      flag |= kHasBundle;
+    case 'b':
+      mask |= kHasBundle;
+      break;
+    }
+  }
+
+  record = getRecordFromPath(pathName, volume, NULL, NULL);
+
+  if(record == NULL) {
+    printf("Path '%s' not found.\n", pathName);
+    return FALSE;
+  }
+
+  if(record->recordType == kHFSPlusFolderRecord) {
+    flag &= folder_mask;
+    mask &= folder_mask;
+    ((HFSPlusCatalogFolder*)record)->userInfo.finderFlags = (((HFSPlusCatalogFolder*)record)->userInfo.finderFlags & (~mask)) | flag;
+    printf("%x\n", ((HFSPlusCatalogFolder*)record)->userInfo.finderFlags);
+  } else if(record->recordType == kHFSPlusFileRecord) {
+    flag &= file_mask;
+    mask &= file_mask;
+    ((HFSPlusCatalogFile*)record)->userInfo.finderFlags = (((HFSPlusCatalogFile*)record)->userInfo.finderFlags & (~mask)) | flag;
+    printf("%x\n", ((HFSPlusCatalogFile*)record)->userInfo.finderFlags);
+  } else {
+    printf("unknown record type %x\n", record->recordType);
+    return FALSE;
+  }
+
+  updateCatalog(volume, record);
+
+  free(record);
+
   return TRUE;
 }
 

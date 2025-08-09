@@ -4,6 +4,8 @@
 #include "common.h"
 #include <stdint.h>
 
+#define FILE_SIZE_UNKNOWN (-1)
+
 typedef struct AbstractFile AbstractFile;
 typedef struct AbstractFile2 AbstractFile2;
 
@@ -14,6 +16,7 @@ typedef off_t (*TellFunc)(AbstractFile* file);
 typedef void (*CloseFunc)(AbstractFile* file);
 typedef off_t (*GetLengthFunc)(AbstractFile* file);
 typedef void (*SetKeyFunc)(AbstractFile2* file, const unsigned int* key, const unsigned int* iv);
+typedef int (*EOFFunc)(AbstractFile* file);
 
 typedef enum AbstractFileType {
 	AbstractFileTypeFile,
@@ -24,7 +27,8 @@ typedef enum AbstractFileType {
 	AbstractFileTypeIBootIM,
 	AbstractFileTypeMem,
 	AbstractFileTypeMemFile,
-	AbstractFileTypeDummy
+	AbstractFileTypeDummy,
+	AbstractFileTypePipe
 } AbstractFileType;
 
 struct AbstractFile {
@@ -36,6 +40,7 @@ struct AbstractFile {
 	GetLengthFunc getLength;
 	CloseFunc close;
 	AbstractFileType type;
+	EOFFunc eof;
 };
 
 struct AbstractFile2 {
@@ -65,6 +70,7 @@ extern "C" {
 	AbstractFile* createAbstractFileFromMemory(void** buffer, size_t size);
 	AbstractFile* createAbstractFileFromMemoryFile(void** buffer, size_t* size);
 	AbstractFile* createAbstractFileFromMemoryFileBuffer(void** buffer, size_t* size, size_t actualBufferSize);
+	AbstractFile* createAbstractFileFromPipe(FILE* file);
 	void abstractFilePrint(AbstractFile* file, const char* format, ...);
 	io_func* IOFuncFromAbstractFile(AbstractFile* file);
 #ifdef __cplusplus
